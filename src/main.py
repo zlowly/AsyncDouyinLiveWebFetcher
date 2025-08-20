@@ -5,7 +5,7 @@ import logging_config
 from liveroom import DoyinLiveRoom
 from datetime import datetime
 import sys
-
+import os
 
 if __name__ == "__main__":
     # 1. 创建解析器对象
@@ -28,14 +28,26 @@ if __name__ == "__main__":
         help="指定日志文件的后缀 (默认: 当前日期时间)"
     )
 
+    parser.add_argument(
+        "-p", "--path",
+        type=str,
+        help="指定日志文件的保存路径。"
+    )
+
     # 3. 解析命令行参数
     args = parser.parse_args()
 
     # 4. 从解析结果中获取参数值
     room_id = args.room
     log_suffix = args.suffix
-    
-    logging_config.setup_logging(log_suffix)
+    log_path = args.path
+
+    if log_path is None:
+        # 使用 os.path.join() 构建跨平台的路径
+        # "logs" 子目录 -> "房间号" 子目录
+        log_path = os.path.join("logs", room_id)
+
+    logging_config.setup_logging(log_suffix, log_path, room_id)
     logger = logging.getLogger(__name__)
 
     async def main():

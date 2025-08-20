@@ -516,9 +516,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-extrapolation-minutes", "-e", # 新增短参数 -e
         type=int,
-        default=60,
+        default=5,
         help="允许进行**除 audienceCount 以外的通用 EWMA 外推**的最大时间距离（分钟）。"
-             "超出此距离则不外推。默认为60分钟。"
+             "超出此距离则不外推。默认为5分钟。"
     )
     # 估算值最大限制
     parser.add_argument(
