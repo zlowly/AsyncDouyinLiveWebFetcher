@@ -166,7 +166,7 @@ class DouyinChatWebSocketClient:
         user_name = message.user.nick_name
         pay_lvl = message.user.pay_grade.level
         logger.debug(message.to_json())
-        print(f"【关注msg】[{user_id}]{user_name} 关注了主播")
+        print(f"【关注msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [#8CE7FF]{user_name} 关注了主播[/#8CE7FF]")
 
     def _parseRoomUserSeqMsg(self, payload):
         """直播间统计"""
