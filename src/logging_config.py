@@ -26,12 +26,12 @@ def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
     配置应用的日志系统，包括输出到文件和控制台。
     这个函数只应该在应用启动时调用一次。
     """
-    os.makedirs(log_file_path, exist_ok=True)
+    os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
     # 获取根日志记录器，并设置最低日志级别
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
 
-    full_log_path = os.path.join(log_file_path, f"app-{room_id}-{log_file_suffix}.log")
+    full_log_path = os.path.join(log_file_path, f"app-{log_file_suffix}.log")
 
     # 创建文件处理器，级别为 DEBUG
     file_handler = logging.FileHandler(full_log_path)
@@ -56,7 +56,7 @@ def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
 
     # 配置特殊日志系统
     # 创建一个名为 'stat_logger' 的新记录器
-    stats_log_path = os.path.join(log_file_path, f"stats-{room_id}-{log_file_suffix}.log")
+    stats_log_path = os.path.join(log_file_path, room_id, f"stats-{log_file_suffix}.log")
     stat_file_handler = logging.FileHandler(stats_log_path)
     stat_file_handler.setLevel(logging.INFO) # 可以设置独立的级别
     stat_file_handler.setFormatter(JsonFormatter())

@@ -31,6 +31,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p", "--path",
         type=str,
+        default="logs",
         help="指定日志文件的保存路径。"
     )
 
@@ -41,11 +42,6 @@ if __name__ == "__main__":
     room_id = args.room
     log_suffix = args.suffix
     log_path = args.path
-
-    if log_path is None:
-        # 使用 os.path.join() 构建跨平台的路径
-        # "logs" 子目录 -> "房间号" 子目录
-        log_path = os.path.join("logs", room_id)
 
     logging_config.setup_logging(log_suffix, log_path, room_id)
     logger = logging.getLogger(__name__)
