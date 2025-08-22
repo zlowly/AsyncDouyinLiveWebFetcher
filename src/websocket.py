@@ -236,7 +236,7 @@ class DouyinChatWebSocketClient:
         logger.debug(message.to_json())
 
         if message.status == 3:
-            print("{time_str} 直播间已结束")
+            print(f"{time_str} 直播间已结束")
             await self.close()
 
     def _parseRoomStreamAdaptationMsg(self, payload):
