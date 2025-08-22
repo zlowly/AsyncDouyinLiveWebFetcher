@@ -72,7 +72,7 @@ def process_log_file(log_file_path, skip_lines=0, output_format="tsv"):
                         if user_name and content_text is not None:
                             message = {
                                 "timestamp": timestamp_str,
-                                "name": user_name,
+                                "speaker": user_name,
                                 "content": content_text
                             }
                             extracted_messages.append(message)
