@@ -30,12 +30,13 @@ message Message{
 message EmojiChatMessage {
   Common common = 1;
   User   user = 2;
-  int64 emojiId = 3;
+  uint64 emojiId = 3;
   Text  emojiContent = 4;
   string defaultContent = 5;
   Image    backgroundImage = 6;
   bool  fromIntercom = 7;
   bool   intercomHideUserCard = 8;
+  PublicAreaCommon public_area_common =9;
 }
 
 // 聊天
@@ -97,7 +98,7 @@ message CommonTextMessage {
 message UpdateFanTicketMessage {
   Common common = 1;
   string roomFanTicketCountText = 2;
-  uint64 roomFanTicketCount = 3;
+  int64 roomFanTicketCount = 3;
   bool forceUpdate = 4;
 }
 
@@ -114,39 +115,45 @@ message RoomUserSeqMessageContributor {
 // 礼物消息
 message GiftMessage {
   Common common = 1;
-  uint64 giftId = 2;
-  uint64 fanTicketCount = 3;
+  int64 giftId = 2;
+  string fanTicketCount = 3;
   uint64 groupCount = 4;
   uint64 repeatCount = 5;
   uint64 comboCount = 6;
   User user = 7;
   User toUser = 8;
-  uint32 repeatEnd = 9;
+  int32 repeatEnd = 9;
   TextEffect textEffect = 10;
-  uint64 groupId = 11;
-  uint64 incomeTaskgifts = 12;
-  uint64 roomFanTicketCount = 13;
+  string groupId = 11;
+  string incomeTaskgifts = 12;
+  string roomFanTicketCount = 13;
   GiftIMPriority priority = 14;
   GiftStruct gift = 15;
   string logId = 16;
-  uint64 sendType = 17;
+  string sendType = 17;
   PublicAreaCommon publicAreaCommon = 18;
   Text trayDisplayText = 19;
-  uint64 bannedDisplayEffects = 20;
-  //  GiftTrayInfo trayInfo = 21;
-  //  AssetEffectMixInfo assetEffectMixInfo = 22;
+  string bannedDisplayEffects = 20;
+  GiftTrayInfo trayInfo = 21;
+  AssetEffectMixInfo assetEffectMixInfo = 22;
   bool displayForSelf = 25;
   string interactGiftInfo = 26;
   string diyItemInfo = 27;
-  repeated uint64 minAssetSetList = 28;
-  uint64 totalCount = 29;
-  uint32 clientGiftSource = 30;
-  //  AnchorGiftData anchorGift = 31;
+  int64 minAssetSetList = 28;
+  string totalCount = 29;
+  int32 clientGiftSource = 30;
+  AnchorGiftData anchorGift = 31;
   repeated uint64 toUserIdsList = 32;
-  uint64 sendTime = 33;
-  uint64 forceDisplayEffects = 34;
+  string sendTime = 33;
+  string forceDisplayEffects = 34;
   string traceId = 35;
-  uint64 effectDisplayTs = 36;
+  string effectDisplayTs = 36;
+  SendTogether send_together = 37; // 一起发送信息
+  ExtraEffect extra_effect = 38;    // 额外效果信息
+  RoomHotInfo room_hot_info = 39;  // 房间热门信息
+  string GiftPlayParam = 40;       // 礼物播放参数
+  int32 multi_send_effect_level = 41; // 多发送效果等级
+  repeated SeriesPlayGift series_gift_data = 42; // 系列礼物数据列表
 }
 
 message GiftStruct {
@@ -209,16 +216,16 @@ message TextEffectDetail {
 message MemberMessage {
   Common common = 1;
   User user = 2;
-  uint64 memberCount = 3;
+  int64 memberCount = 3;
   User operator = 4;
   bool isSetToAdmin = 5;
   bool isTopUser = 6;
-  uint64 rankScore = 7;
-  uint64 topUserNo = 8;
-  uint64 enterType = 9;
-  uint64 action = 10;
+  int64 rankScore = 7;
+  int64 topUserNo = 8;
+  int64 enterType = 9;
+  int64 action = 10;
   string actionDescription = 11;
-  uint64 userId = 12;
+  int64 userId = 12;
   EffectConfig effectConfig = 13;
   string popStr = 14;
   EffectConfig enterEffectConfig = 15;
@@ -226,8 +233,8 @@ message MemberMessage {
   Image backgroundImageV2 = 17;
   Text anchorDisplayText = 18;
   PublicAreaCommon publicAreaCommon = 19;
-  uint64 userEnterTipType = 20;
-  uint64 anchorEnterTipType = 21;
+  int64 userEnterTipType = 20;
+  int64 anchorEnterTipType = 21;
 }
 
 
@@ -270,16 +277,17 @@ message Text {
 }
 
 message TextPiece {
-  bool type = 1;
+  uint32 type = 1;
   TextFormat format = 2;
-  string stringValue = 3;
-  TextPieceUser userValue = 4;
-  TextPieceGift giftValue = 5;
-  TextPieceHeart heartValue = 6;
-  TextPiecePatternRef patternRefValue = 7;
-  TextPieceImage imageValue = 8;
+  string value_ref = 3;
+  string stringValue = 11;
+  TextPieceUser userValue = 21;
+  TextPieceGift giftValue = 22;
+  TextPieceHeart heartValue = 23;
+  TextPiecePatternRef patternRefValue = 24;
+  TextPieceImage imageValue = 25;
+  string schema_key =100;
 }
-
 
 message TextPieceImage {
   Image image = 1;
