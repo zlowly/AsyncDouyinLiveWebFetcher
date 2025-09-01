@@ -12,8 +12,8 @@ import re
 import time
 
 # 定义 ntfy 相关的常量
-NTFY_URL = "http://localhost:8080/mytopic/json"
-TARGET_STREAMER = "QL.安安大王🥜"
+NTFY_URL = "http://localhost:10380/mytopic/json"
+TARGET_STREAMER = "SL.艾珀Aper♰"
 
 # 创建一个异步事件对象，用于在 ntfy 监听器和主任务之间通信
 event_to_trigger_main_task = asyncio.Event()
@@ -62,7 +62,6 @@ async def ntfy_listener():
         
         except requests.exceptions.RequestException as e:
             logger.error(f"An error occurred in ntfy listener: {e}. Retrying in 5 seconds...")
-            await asyncio.sleep(5)
 
 
 async def main_task(is_watch_mode=False):
@@ -95,6 +94,9 @@ async def main_task(is_watch_mode=False):
     
     logger.info("Main task finished its execution.")
 
+async def run_concurrent_tasks():
+    """包装多个协程的执行"""
+    await asyncio.gather(ntfy_listener(), main_task(is_watch_mode=True))
 
 if __name__ == "__main__":
     # 1. 创建解析器对象
@@ -145,7 +147,7 @@ if __name__ == "__main__":
         logging_config.setup_logging(log_suffix, log_path, room_id)
         logger = logging.getLogger(__name__)
         logger.info("Running in ntfy watch mode...")
-        asyncio.run(asyncio.gather(ntfy_listener(), main_task(is_watch_mode=True)))
+        asyncio.run(run_concurrent_tasks())  # 运行包装后的协程
     else:
         # 常规模式：直接运行主任务
         logging_config.setup_logging(log_suffix, log_path, room_id)
