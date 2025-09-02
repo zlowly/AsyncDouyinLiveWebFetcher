@@ -6,7 +6,7 @@ from liveroom import DoyinLiveRoom
 from datetime import datetime
 import sys
 import os
-import requests
+import aiohttp
 import json
 import re
 import time
@@ -30,38 +30,42 @@ async def ntfy_listener():
     """
     global triggered_log_suffix, triggered_room_id
     
-    while True:
-        try:
-            with requests.get(NTFY_URL, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if line:
-                        try:
-                            message_data = json.loads(line)
-                            message_text = message_data.get("message")
-                            
-                            if message_text:
-                                logger.info(f"Received ntfy message: {message_text}")
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(NTFY_URL, timeout=60) as r:
+                    r.raise_for_status()
+                    async for line in r.content:
+                        if line:
+                            try:
+                                message_data = json.loads(line.decode('utf-8'))
+                                message_text = message_data.get("message")
                                 
-                                match = re.search(r"直播间状态更新：(.*?) 正在直播中", message_text)
-                                
-                                if match:
-                                    streamer_name = match.group(1).strip()
-                                    if streamer_name == TARGET_STREAMER:
-                                        logger.info(f"Detected a live broadcast from: {streamer_name}.")
-                                        
-                                        # 更新全局变量，传递给主任务
-                                        triggered_log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                                        triggered_room_id = args.room # 使用解析器中的默认 room_id
-                                        
-                                        # 设置事件，通知 main_task 可以开始运行了
-                                        event_to_trigger_main_task.set()
-                                        
-                        except json.JSONDecodeError:
-                            logger.error(f"Could not decode JSON: {line}")
-        
-        except requests.exceptions.RequestException as e:
-            logger.error(f"An error occurred in ntfy listener: {e}. Retrying in 5 seconds...")
+                                if message_text:
+                                    logger.info(f"Received ntfy message: {message_text}")
+                                    
+                                    match = re.search(r"直播间状态更新：(.*?) 正在直播中", message_text)
+                                    
+                                    if match:
+                                        streamer_name = match.group(1).strip()
+                                        if streamer_name.startswith(TARGET_STREAMER):
+                                            logger.info(f"Detected a live broadcast from: {streamer_name}.")
+                                            
+                                            # 更新全局变量，传递给主任务
+                                            triggered_log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                                            triggered_room_id = args.room # 使用解析器中的默认 room_id
+                                            
+                                            # 设置事件，通知 main_task 可以开始运行了
+                                            event_to_trigger_main_task.set()
+                                            
+                            except json.JSONDecodeError:
+                                logger.error(f"Could not decode JSON: {line}")
+            
+            except aiohttp.ClientError as e:
+                logger.error(f"An aiohttp error occurred in ntfy listener: {e}. Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+            except asyncio.TimeoutError:
+                logger.warning("ntfy listener connection timed out. Reconnecting...")
 
 
 async def main_task(is_watch_mode=False):
