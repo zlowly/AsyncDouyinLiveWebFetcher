@@ -40,33 +40,25 @@ async def ntfy_listener():
                             try:
                                 message_data = json.loads(line.decode('utf-8'))
                                 message_text = message_data.get("message")
-                                
                                 if message_text:
                                     logger.info(f"Received ntfy message: {message_text}")
-                                    
                                     match = re.search(r"直播间状态更新：(.*?) 正在直播中", message_text)
-                                    
                                     if match:
                                         streamer_name = match.group(1).strip()
                                         if streamer_name.startswith(TARGET_STREAMER):
                                             logger.info(f"Detected a live broadcast from: {streamer_name}.")
-                                            
                                             # 更新全局变量，传递给主任务
                                             triggered_log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                                             triggered_room_id = args.room # 使用解析器中的默认 room_id
-                                            
                                             # 设置事件，通知 main_task 可以开始运行了
                                             event_to_trigger_main_task.set()
-                                            
                             except json.JSONDecodeError:
                                 logger.error(f"Could not decode JSON: {line}")
-            
             except aiohttp.ClientError as e:
                 logger.error(f"An aiohttp error occurred in ntfy listener: {e}. Retrying in 5 seconds...")
                 await asyncio.sleep(5)
             except asyncio.TimeoutError:
                 logger.warning("ntfy listener connection timed out. Reconnecting...")
-
 
 async def main_task(is_watch_mode=False):
     """
@@ -79,14 +71,9 @@ async def main_task(is_watch_mode=False):
         await event_to_trigger_main_task.wait()
         logger.info("Main task received trigger. Starting application...")
         event_to_trigger_main_task.clear()
-        
-        # 使用全局变量中的参数重新配置日志
-        logging_config.setup_logging(triggered_log_suffix, args.path, triggered_room_id)
-        
     else:
         # 在常规模式下，直接开始执行
         logger.info("Application started in normal mode.")
-    
     # 执行你的核心业务逻辑
     async with await DoyinLiveRoom.new(args.room) as room:
         ws = await room.create_websocket()
@@ -95,7 +82,6 @@ async def main_task(is_watch_mode=False):
                 await asyncio.sleep(60)
         except KeyboardInterrupt:
             await ws.close()
-    
     logger.info("Main task finished its execution.")
 
 async def run_concurrent_tasks():
