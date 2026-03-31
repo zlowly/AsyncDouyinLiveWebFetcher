@@ -27,9 +27,23 @@ from protobuf.douyin import (
 logger = logging.getLogger(__name__)
 stat_logger = logging.getLogger("stat_logger")
 
+room_stop_callbacks = {}
+room_reconnect_callbacks = {}
+
+
+def register_room_stop_callback(room_id: str, callback):
+    room_stop_callbacks[room_id] = callback
+
+
+def register_room_reconnect_callback(room_id: str, callback):
+    room_reconnect_callbacks[room_id] = callback
+
+
 class DouyinChatWebSocketClient:
     _ws_session: aiohttp.ClientWebSocketResponse
     _tasks: list[asyncio.Task]
+    _room_id: str
+    _last_message_time: float
 
     def __init__(self):
         raise NotImplementedError(
@@ -38,13 +52,22 @@ class DouyinChatWebSocketClient:
 
     @classmethod
     async def new(
-        cls, session: aiohttp.ClientSession, url: str, headers: dict
+        cls,
+        session: aiohttp.ClientSession,
+        url: str,
+        headers: dict,
+        room_id: str,
     ):
         instance = object.__new__(cls)
         instance._tasks = []
+        instance._room_id = room_id
+        instance._last_message_time = asyncio.get_event_loop().time()
         instance._ws_session = await session.ws_connect(url, headers=headers)
         instance._tasks.append(asyncio.create_task(instance._send_heartbeat()))
         instance._tasks.append(asyncio.create_task(instance._receive_loop()))
+        instance._tasks.append(
+            asyncio.create_task(instance._check_connection())
+        )
         return instance
 
     async def close(self):
@@ -63,9 +86,25 @@ class DouyinChatWebSocketClient:
         except Exception as e:
             logger.exception("Heartbeat error: %s", e)
 
+    async def _check_connection(self, timeout: int = 60):
+        while not self._ws_session.closed:
+            await asyncio.sleep(10)
+            current_time = asyncio.get_event_loop().time()
+            if current_time - self._last_message_time > timeout:
+                logger.warning(
+                    f"Connection timeout for room {self._room_id}, no message received for {timeout}s"
+                )
+                reconnect_cb = room_reconnect_callbacks.get(self._room_id)
+                if reconnect_cb:
+                    await reconnect_cb()
+                break
+        if not self._ws_session.closed:
+            await self.close()
+
     async def _receive_loop(self):
         try:
             async for msg in self._ws_session:
+                self._last_message_time = asyncio.get_event_loop().time()
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     await self._handle_binary(msg.data)
                 elif msg.type == aiohttp.WSMsgType.TEXT:
@@ -124,13 +163,23 @@ class DouyinChatWebSocketClient:
         time_str = datetime.now().strftime("%H:%M:%S")
         message = ChatMessage().parse(payload)
         user_name = message.user.nick_name
-        #user_id = message.user.id
+        # user_id = message.user.id
         pay_lvl = message.user.pay_grade.level
         fans_lvl = message.user.fans_club.data.level
         content = message.content
         logger.debug(message.to_json())
-        stat_logger.info({"method": "WebcastChatMessage", "payLevel": pay_lvl, "fansLevel": fans_lvl, "userName": user_name, "content": content})
-        print(f"{time_str}【聊天msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [white on #9d7d30]{fans_lvl}[/white on #9d7d30] [#8CE7FF]{user_name}：[/#8CE7FF]{content}")
+        stat_logger.info(
+            {
+                "method": "WebcastChatMessage",
+                "payLevel": pay_lvl,
+                "fansLevel": fans_lvl,
+                "userName": user_name,
+                "content": content,
+            }
+        )
+        print(
+            f"{time_str}【聊天msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [white on #9d7d30]{fans_lvl}[/white on #9d7d30] [#8CE7FF]{user_name}：[/#8CE7FF]{content}"
+        )
 
     def _parseGiftMsg(self, payload):
         """礼物消息"""
@@ -142,8 +191,19 @@ class DouyinChatWebSocketClient:
         gift_name = message.gift.name
         gift_cnt = message.combo_count
         logger.debug(message.to_json())
-        stat_logger.info({"method": "WebcastGiftMessage", "payLevel": pay_lvl, "fansLevel": fans_lvl, "userName": user_name, "giftName": gift_name, "giftCount": gift_cnt})
-        print(f"{time_str}【礼物msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [white on #9d7d30]{fans_lvl}[/white on #9d7d30] [#8CE7FF]{user_name}[/#8CE7FF] [#eba825]送出了 {gift_name}x{gift_cnt}[/#eba825]")
+        stat_logger.info(
+            {
+                "method": "WebcastGiftMessage",
+                "payLevel": pay_lvl,
+                "fansLevel": fans_lvl,
+                "userName": user_name,
+                "giftName": gift_name,
+                "giftCount": gift_cnt,
+            }
+        )
+        print(
+            f"{time_str}【礼物msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [white on #9d7d30]{fans_lvl}[/white on #9d7d30] [#8CE7FF]{user_name}[/#8CE7FF] [#eba825]送出了 {gift_name}x{gift_cnt}[/#eba825]"
+        )
 
     def _parseLikeMsg(self, payload):
         """点赞消息"""
@@ -165,8 +225,18 @@ class DouyinChatWebSocketClient:
         fans_lvl = message.user.fans_club.data.level
         gender = ["保密", "男", "女"][message.user.gender]
         logger.debug(message.to_json())
-        stat_logger.info({"method": "WebcastMemberMessage", "payLevel": pay_lvl, "fansLevel": fans_lvl, "userName": user_name, "gender": gender})
-        print(f"{time_str}【进场msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [white on #9d7d30]{fans_lvl}[/white on #9d7d30] [{gender}] [#8CE7FF]{user_name}[/#8CE7FF] 进入了直播间")
+        stat_logger.info(
+            {
+                "method": "WebcastMemberMessage",
+                "payLevel": pay_lvl,
+                "fansLevel": fans_lvl,
+                "userName": user_name,
+                "gender": gender,
+            }
+        )
+        print(
+            f"{time_str}【进场msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [white on #9d7d30]{fans_lvl}[/white on #9d7d30] [{gender}] [#8CE7FF]{user_name}[/#8CE7FF] 进入了直播间"
+        )
 
     def _parseSocialMsg(self, payload):
         """关注消息"""
@@ -175,7 +245,9 @@ class DouyinChatWebSocketClient:
         user_name = message.user.nick_name
         pay_lvl = message.user.pay_grade.level
         logger.debug(message.to_json())
-        print(f"{time_str}【关注msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [#8CE7FF]{user_name} 关注了主播[/#8CE7FF]")
+        print(
+            f"{time_str}【关注msg】[white on #7386ea]{pay_lvl}[/white on #7386ea] [#8CE7FF]{user_name} 关注了主播[/#8CE7FF]"
+        )
 
     def _parseRoomUserSeqMsg(self, payload):
         """直播间统计"""
@@ -183,9 +255,17 @@ class DouyinChatWebSocketClient:
         message = RoomUserSeqMessage().parse(payload)
         current = message.total
         total = message.total_pv_for_anchor
-        stat_logger.info({"method": "WebcastRoomUserSeqMessage", "totalUserCount": total, "audienceCount": current })
+        stat_logger.info(
+            {
+                "method": "WebcastRoomUserSeqMessage",
+                "totalUserCount": total,
+                "audienceCount": current,
+            }
+        )
         logger.debug(message.to_json())
-        print(f"{time_str}【统计msg】当前观看人数: {current}, 累计观看人数: {total}")
+        print(
+            f"{time_str}【统计msg】当前观看人数: {current}, 累计观看人数: {total}"
+        )
 
     def _parseFansclubMsg(self, payload):
         """粉丝团消息"""
@@ -200,12 +280,14 @@ class DouyinChatWebSocketClient:
         time_str = datetime.now().strftime("%H:%M:%S")
         message = EmojiChatMessage().parse(payload)
         emoji_id = message.emoji_id
-        #user = message.user
+        # user = message.user
         user_name = message.user.nick_name
         common = message.common
         default_content = message.default_content
         logger.debug(message.to_json())
-        print( f"{time_str}【聊天表情包id】{user_name}: default_content: {default_content}")
+        print(
+            f"{time_str}【聊天表情包id】{user_name}: default_content: {default_content}"
+        )
 
     def _parseRoomMsg(self, payload):
         time_str = datetime.now().strftime("%H:%M:%S")
@@ -237,6 +319,9 @@ class DouyinChatWebSocketClient:
 
         if message.status == 3:
             print(f"{time_str} 直播间已结束")
+            callback = room_stop_callbacks.get(self._room_id)
+            if callback:
+                await callback()
             await self.close()
 
     def _parseRoomStreamAdaptationMsg(self, payload):

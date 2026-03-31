@@ -88,7 +88,9 @@ class DoyinLiveRoom:
             return await response.json()
 
     async def get_is_alive(self) -> bool:
-        return (await self.get_info()).get("data", {}).get("room_status", 2) == 0
+        return (await self.get_info()).get("data", {}).get(
+            "room_status", 2
+        ) == 0
 
     async def create_websocket(self):
         target = CONSTANTS.get_websocket_url(self.room_id)
@@ -96,5 +98,8 @@ class DoyinLiveRoom:
         target += f"&signature={signature}"
 
         return await DouyinChatWebSocketClient.new(
-            session=self._session, url=target, headers=self.headers
+            session=self._session,
+            url=target,
+            headers=self.headers,
+            room_id=self.web_rid,
         )

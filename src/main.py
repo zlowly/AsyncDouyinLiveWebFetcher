@@ -13,23 +13,28 @@ import time
 
 # 定义 ntfy 相关的常量
 NTFY_URL = "http://localhost:10380/mytopic/json"
-TARGET_STREAMER = "SL.艾珀Aper♰"
 
-# 创建一个异步事件对象，用于在 ntfy 监听器和主任务之间通信
-event_to_trigger_main_task = asyncio.Event()
+# 白名单：主播名 -> 房间号
+WHITELIST = {
+    "温缇": "249069870647",
+    "念杳杳": "38082662970",
+}
 
-# 定义全局变量，用于传递触发时的日志后缀和房间 ID
-triggered_log_suffix = None
-triggered_room_id = None
+# 直播间事件字典，用于在 ntfy 监听器和各主任务之间通信
+room_events = {}
+room_stop_events = {}
+room_log_suffixes = {}
+for room_id in WHITELIST.values():
+    room_events[room_id] = asyncio.Event()
+    room_stop_events[room_id] = asyncio.Event()
+    room_log_suffixes[room_id] = None
 
 
 async def ntfy_listener():
     """
     一个异步函数，持续监听 ntfy 消息。
-    当检测到特定消息时，设置一个异步事件并传递参数。
+    当检测到白名单中的主播直播时，设置对应房间的事件并传递参数。
     """
-    global triggered_log_suffix, triggered_room_id
-    
     async with aiohttp.ClientSession() as session:
         while True:
             try:
@@ -38,55 +43,135 @@ async def ntfy_listener():
                     async for line in r.content:
                         if line:
                             try:
-                                message_data = json.loads(line.decode('utf-8'))
+                                message_data = json.loads(line.decode("utf-8"))
                                 message_text = message_data.get("message")
                                 if message_text:
-                                    logger.info(f"Received ntfy message: {message_text}")
-                                    match = re.search(r"直播间状态更新：(.*?) 正在直播中", message_text)
+                                    logger.info(
+                                        f"Received ntfy message: {message_text}"
+                                    )
+                                    match = re.search(
+                                        r"直播间状态更新：(.*?) 正在直播中",
+                                        message_text,
+                                    )
                                     if match:
                                         streamer_name = match.group(1).strip()
-                                        if streamer_name.startswith(TARGET_STREAMER):
-                                            logger.info(f"Detected a live broadcast from: {streamer_name}.")
-                                            # 更新全局变量，传递给主任务
-                                            triggered_log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                                            triggered_room_id = args.room # 使用解析器中的默认 room_id
-                                            # 设置事件，通知 main_task 可以开始运行了
-                                            event_to_trigger_main_task.set()
+                                        for name, room_id in WHITELIST.items():
+                                            if name in streamer_name:
+                                                logger.info(
+                                                    f"Detected a live broadcast from: {streamer_name} (room: {room_id})."
+                                                )
+                                                room_log_suffixes[room_id] = (
+                                                    datetime.now().strftime(
+                                                        "%Y-%m-%d_%H-%M-%S"
+                                                    )
+                                                )
+                                                room_events[room_id].set()
+                                                break
+                                    else:
+                                        end_match = re.search(
+                                            r"直播间状态更新：(.*?) 直播已结束",
+                                            message_text,
+                                        )
+                                        if end_match:
+                                            streamer_name = end_match.group(
+                                                1
+                                            ).strip()
+                                            for (
+                                                name,
+                                                room_id,
+                                            ) in WHITELIST.items():
+                                                if name in streamer_name:
+                                                    logger.info(
+                                                        f"Detected stream ended for: {streamer_name} (room: {room_id})."
+                                                    )
+                                                    room_stop_events[
+                                                        room_id
+                                                    ].set()
+                                                    break
                             except json.JSONDecodeError:
                                 logger.error(f"Could not decode JSON: {line}")
             except aiohttp.ClientError as e:
-                logger.error(f"An aiohttp error occurred in ntfy listener: {e}. Retrying in 5 seconds...")
+                logger.error(
+                    f"An aiohttp error occurred in ntfy listener: {e}. Retrying in 5 seconds..."
+                )
                 await asyncio.sleep(5)
             except asyncio.TimeoutError:
-                logger.warning("ntfy listener connection timed out. Reconnecting...")
+                logger.debug(
+                    "ntfy listener connection timed out. Reconnecting..."
+                )
 
-async def main_task(is_watch_mode=False):
+
+async def main_task_for_room(room_id: str):
     """
-    一个异步函数，它会根据模式执行任务。
-    在监视模式下，它会等待触发事件；否则，它会立即执行。
+    为指定直播间运行的任务。
+    在监视模式下等待触发事件后开始执行，收到结束消息后关闭。
     """
-    if is_watch_mode:
-        # 在监视模式下，等待 ntfy_listener 的触发事件
-        logger.info("Main task is ready and waiting for ntfy trigger...")
-        await event_to_trigger_main_task.wait()
-        logger.info("Main task received trigger. Starting application...")
-        event_to_trigger_main_task.clear()
-    else:
-        # 在常规模式下，直接开始执行
-        logger.info("Application started in normal mode.")
-    # 执行你的核心业务逻辑
-    async with await DoyinLiveRoom.new(args.room) as room:
-        ws = await room.create_websocket()
-        try:
-            while True:
-                await asyncio.sleep(60)
-        except KeyboardInterrupt:
-            await ws.close()
-    logger.info("Main task finished its execution.")
+    from websocket import (
+        register_room_stop_callback,
+        register_room_reconnect_callback,
+    )
+
+    async def on_room_stop():
+        logger.info(f"Room {room_id} stream ended.")
+        room_stop_events[room_id].set()
+
+    register_room_stop_callback(room_id, on_room_stop)
+
+    while True:
+        logger = logging.getLogger(f"room_{room_id}")
+        logger.info(
+            f"Task for room {room_id} is ready and waiting for trigger..."
+        )
+        await room_events[room_id].wait()
+        logger.info(
+            f"Task for room {room_id} received trigger. Starting application..."
+        )
+        room_events[room_id].clear()
+
+        log_suffix = room_log_suffixes.get(room_id)
+        if log_suffix:
+            logging_config.setup_logging(log_suffix, log_path, room_id)
+            logger = logging.getLogger(f"room_{room_id}")
+            logger.info(
+                f"Started logging to new file with suffix: {log_suffix}"
+            )
+
+        reconnect_event = asyncio.Event()
+
+        async def on_reconnect():
+            logger.info(f"Room {room_id} connection timeout, reconnecting...")
+
+        register_room_reconnect_callback(room_id, on_reconnect)
+
+        while True:
+            async with await DoyinLiveRoom.new(room_id) as room:
+                ws = await room.create_websocket()
+                try:
+                    while not ws._ws_session.closed:
+                        await asyncio.sleep(1)
+                except KeyboardInterrupt:
+                    break
+            if room_stop_events[room_id].is_set():
+                break
+            logger.info(f"Room {room_id} connection closed, reconnecting...")
+        if room_stop_events[room_id].is_set():
+            logger.info(
+                f"Task for room {room_id} finished this session. Waiting for next trigger..."
+            )
+            room_stop_events[room_id].clear()
+        else:
+            logger.info(
+                f"Task for room {room_id} finished this session. Waiting for next trigger..."
+            )
+
 
 async def run_concurrent_tasks():
     """包装多个协程的执行"""
-    await asyncio.gather(ntfy_listener(), main_task(is_watch_mode=True))
+    tasks: list[asyncio.Task] = [asyncio.create_task(ntfy_listener())]
+    for room_id in WHITELIST.values():
+        tasks.append(asyncio.create_task(main_task_for_room(room_id)))
+    await asyncio.gather(*tasks)
+
 
 if __name__ == "__main__":
     # 1. 创建解析器对象
@@ -96,31 +181,35 @@ if __name__ == "__main__":
 
     # 2. 定义命令行参数
     parser.add_argument(
-        "-r", "--room",
+        "-r",
+        "--room",
         type=str,
-        default="74083423272",
-        help="指定直播间的房间ID (默认: 74083423272)"
+        default="249069870647",
+        help="指定直播间的房间ID (默认: 249069870647)",
     )
 
     parser.add_argument(
-        "-s", "--suffix",
+        "-s",
+        "--suffix",
         type=str,
         default=datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        help="指定日志文件的后缀 (默认: 当前日期时间)"
+        help="指定日志文件的后缀 (默认: 当前日期时间)",
     )
 
     parser.add_argument(
-        "-p", "--path",
+        "-p",
+        "--path",
         type=str,
         default="logs",
-        help="指定日志文件的保存路径。"
+        help="指定日志文件的保存路径。",
     )
 
     # --- 新增参数 ---
     parser.add_argument(
-        "-w", "--watch",
+        "-w",
+        "--watch",
         action="store_true",
-        help="启用 ntfy 监听模式，等待消息触发。"
+        help="启用 ntfy 监听模式，等待消息触发。",
     )
 
     # 3. 解析命令行参数
@@ -142,4 +231,5 @@ if __name__ == "__main__":
         # 常规模式：直接运行主任务
         logging_config.setup_logging(log_suffix, log_path, room_id)
         logger = logging.getLogger(__name__)
-        asyncio.run(main_task(is_watch_mode=False))
+        logger.info("Application started in normal mode.")
+        asyncio.run(main_task_for_room(room_id))

@@ -3,6 +3,7 @@ import json
 import sys
 import os
 
+
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         # 将 record 转换为字典
@@ -10,7 +11,7 @@ class JsonFormatter(logging.Formatter):
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "name": record.name,
-            "message": record.getMessage()
+            "message": record.getMessage(),
         }
         # 如果日志消息本身就是字典，则合并
         try:
@@ -20,6 +21,7 @@ class JsonFormatter(logging.Formatter):
             pass
 
         return json.dumps(log_record, ensure_ascii=False)
+
 
 def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
     """
@@ -36,7 +38,7 @@ def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
     # 创建文件处理器，级别为 DEBUG
     file_handler = logging.FileHandler(full_log_path)
     file_handler.setLevel(logging.DEBUG)
-    
+
     # 创建控制台处理器，级别为 INFO
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
@@ -56,13 +58,48 @@ def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
 
     # 配置特殊日志系统
     # 创建一个名为 'stat_logger' 的新记录器
-    stats_log_path = os.path.join(log_file_path, room_id, f"stats-{log_file_suffix}.log")
+    stats_log_path = os.path.join(
+        log_file_path, room_id, f"stats-{log_file_suffix}.log"
+    )
     stat_file_handler = logging.FileHandler(stats_log_path)
-    stat_file_handler.setLevel(logging.INFO) # 可以设置独立的级别
+    stat_file_handler.setLevel(logging.INFO)  # 可以设置独立的级别
     stat_file_handler.setFormatter(JsonFormatter())
     stat_logger = logging.getLogger("stat_logger")
     stat_logger.setLevel(logging.INFO)  # 设置该记录器的最低级别
-    stat_logger.propagate = False       # !!! 阻止日志传播到父记录器
+    stat_logger.propagate = False  # !!! 阻止日志传播到父记录器
     stat_logger.addHandler(stat_file_handler)
 
     logging.info("Logging system configured successfully.")
+
+
+def reconfigure_logging(new_suffix: str, log_file_path: str, room_id: str):
+    """
+    重新配置日志系统，关闭旧的日志文件并创建新的。
+    用于在检测到直播开启后，切换到新的日志文件。
+    """
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            handler.close()
+            root_logger.removeHandler(handler)
+
+    stat_logger = logging.getLogger("stat_logger")
+    for handler in stat_logger.handlers[:]:
+        handler.close()
+        stat_logger.handlers.clear()
+
+    os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
+
+    full_log_path = os.path.join(log_file_path, f"app-{new_suffix}.log")
+    file_handler = logging.FileHandler(full_log_path)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(JsonFormatter())
+    root_logger.addHandler(file_handler)
+
+    stats_log_path = os.path.join(
+        log_file_path, room_id, f"stats-{new_suffix}.log"
+    )
+    stat_file_handler = logging.FileHandler(stats_log_path)
+    stat_file_handler.setLevel(logging.INFO)
+    stat_file_handler.setFormatter(JsonFormatter())
+    stat_logger.addHandler(stat_file_handler)
