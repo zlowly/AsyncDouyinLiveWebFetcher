@@ -86,7 +86,7 @@ def reconfigure_logging(new_suffix: str, log_file_path: str, room_id: str):
     stat_logger = logging.getLogger("stat_logger")
     for handler in stat_logger.handlers[:]:
         handler.close()
-        stat_logger.handlers.clear()
+        stat_logger.removeHandler(handler)
 
     os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
 

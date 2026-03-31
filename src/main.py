@@ -130,7 +130,7 @@ async def main_task_for_room(room_id: str):
 
         log_suffix = room_log_suffixes.get(room_id)
         if log_suffix:
-            logging_config.setup_logging(log_suffix, log_path, room_id)
+            logging_config.reconfigure_logging(log_suffix, log_path, room_id)
             logger = logging.getLogger(f"room_{room_id}")
             logger.info(
                 f"Started logging to new file with suffix: {log_suffix}"
