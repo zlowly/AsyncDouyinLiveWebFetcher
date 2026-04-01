@@ -6,14 +6,12 @@ import os
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
-        # 将 record 转换为字典
         log_record = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "name": record.name,
             "message": record.getMessage(),
         }
-        # 如果日志消息本身就是字典，则合并
         try:
             msg_dict = json.loads(record.getMessage())
             log_record.update(msg_dict)
@@ -23,83 +21,100 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_record, ensure_ascii=False)
 
 
-def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
+def setup_app_logging(
+    log_file_suffix: str, log_file_path: str, enable_room_prefix: bool = False
+):
     """
-    配置应用的日志系统，包括输出到文件和控制台。
+    配置统一的应用日志系统，只设置控制台和主应用日志文件。
     这个函数只应该在应用启动时调用一次。
     """
-    os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
-    # 获取根日志记录器，并设置最低日志级别
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
 
     full_log_path = os.path.join(log_file_path, f"app-{log_file_suffix}.log")
 
-    # 创建文件处理器，级别为 DEBUG
     file_handler = logging.FileHandler(full_log_path)
     file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(JsonFormatter())
 
-    # 创建控制台处理器，级别为 INFO
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
 
-    # 定义日志格式
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    # 设置处理器的格式
+    if enable_room_prefix:
+        formatter = logging.Formatter(
+            "%(asctime)s - [%(name)s] - %(levelname)s - %(message)s"
+        )
+    else:
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
     console_handler.setFormatter(formatter)
-    file_handler.setFormatter(JsonFormatter())
 
-    # 添加处理器到根记录器
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
-    # 配置特殊日志系统
-    # 创建一个名为 'stat_logger' 的新记录器
-    stats_log_path = os.path.join(
-        log_file_path, room_id, f"stats-{log_file_suffix}.log"
-    )
-    stat_file_handler = logging.FileHandler(stats_log_path)
-    stat_file_handler.setLevel(logging.INFO)  # 可以设置独立的级别
-    stat_file_handler.setFormatter(JsonFormatter())
-    stat_logger = logging.getLogger("stat_logger")
-    stat_logger.setLevel(logging.INFO)  # 设置该记录器的最低级别
-    stat_logger.propagate = False  # !!! 阻止日志传播到父记录器
-    stat_logger.addHandler(stat_file_handler)
-
-    logging.info("Logging system configured successfully.")
+    logging.info("App logging system configured successfully.")
 
 
-def reconfigure_logging(new_suffix: str, log_file_path: str, room_id: str):
+def setup_room_logger(room_id: str, suffix: str, log_file_path: str) -> tuple:
     """
-    重新配置日志系统，关闭旧的日志文件并创建新的。
-    用于在检测到直播开启后，切换到新的日志文件。
+    为指定房间设置独立的统计日志记录器。
+    返回 (app_logger, stat_logger) 元组。
     """
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        if isinstance(handler, logging.FileHandler):
-            handler.close()
-            root_logger.removeHandler(handler)
-
-    stat_logger = logging.getLogger("stat_logger")
-    for handler in stat_logger.handlers[:]:
-        handler.close()
-        stat_logger.removeHandler(handler)
-
     os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
 
-    full_log_path = os.path.join(log_file_path, f"app-{new_suffix}.log")
-    file_handler = logging.FileHandler(full_log_path)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(JsonFormatter())
-    root_logger.addHandler(file_handler)
+    app_logger = logging.getLogger(f"room_{room_id}")
+    app_logger.setLevel(logging.DEBUG)
 
     stats_log_path = os.path.join(
-        log_file_path, room_id, f"stats-{new_suffix}.log"
+        log_file_path, room_id, f"stats-{suffix}.log"
     )
     stat_file_handler = logging.FileHandler(stats_log_path)
     stat_file_handler.setLevel(logging.INFO)
     stat_file_handler.setFormatter(JsonFormatter())
+
+    stat_logger = logging.getLogger(f"stat_{room_id}")
+    stat_logger.setLevel(logging.INFO)
+    stat_logger.propagate = False
     stat_logger.addHandler(stat_file_handler)
+
+    return app_logger, stat_logger
+
+
+def setup_logging(log_file_suffix: str, log_file_path: str, room_id: str):
+    """
+    配置应用的日志系统，用于普通模式（单房间）。
+    """
+    os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    full_log_path = os.path.join(log_file_path, f"app-{log_file_suffix}.log")
+
+    file_handler = logging.FileHandler(full_log_path)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(JsonFormatter())
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    console_handler.setFormatter(formatter)
+
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    stats_log_path = os.path.join(
+        log_file_path, room_id, f"stats-{log_file_suffix}.log"
+    )
+    stat_file_handler = logging.FileHandler(stats_log_path)
+    stat_file_handler.setLevel(logging.INFO)
+    stat_file_handler.setFormatter(JsonFormatter())
+
+    stat_logger = logging.getLogger(f"stat_{room_id}")
+    stat_logger.setLevel(logging.INFO)
+    stat_logger.propagate = False
+    stat_logger.addHandler(stat_file_handler)
+
+    logging.info("Logging system configured successfully.")

@@ -25,7 +25,6 @@ from protobuf.douyin import (
 )
 
 logger = logging.getLogger(__name__)
-stat_logger = logging.getLogger("stat_logger")
 
 room_stop_callbacks = {}
 room_reconnect_callbacks = {}
@@ -61,6 +60,7 @@ class DouyinChatWebSocketClient:
         instance = object.__new__(cls)
         instance._tasks = []
         instance._room_id = room_id
+        instance._stat_logger = logging.getLogger(f"stat_{room_id}")
         instance._last_message_time = asyncio.get_event_loop().time()
         instance._ws_session = await session.ws_connect(url, headers=headers)
         instance._tasks.append(asyncio.create_task(instance._send_heartbeat()))
@@ -168,7 +168,7 @@ class DouyinChatWebSocketClient:
         fans_lvl = message.user.fans_club.data.level
         content = message.content
         logger.debug(message.to_json())
-        stat_logger.info(
+        self._stat_logger.info(
             {
                 "method": "WebcastChatMessage",
                 "payLevel": pay_lvl,
@@ -191,7 +191,7 @@ class DouyinChatWebSocketClient:
         gift_name = message.gift.name
         gift_cnt = message.combo_count
         logger.debug(message.to_json())
-        stat_logger.info(
+        self._stat_logger.info(
             {
                 "method": "WebcastGiftMessage",
                 "payLevel": pay_lvl,
@@ -225,7 +225,7 @@ class DouyinChatWebSocketClient:
         fans_lvl = message.user.fans_club.data.level
         gender = ["保密", "男", "女"][message.user.gender]
         logger.debug(message.to_json())
-        stat_logger.info(
+        self._stat_logger.info(
             {
                 "method": "WebcastMemberMessage",
                 "payLevel": pay_lvl,
@@ -255,7 +255,7 @@ class DouyinChatWebSocketClient:
         message = RoomUserSeqMessage().parse(payload)
         current = message.total
         total = message.total_pv_for_anchor
-        stat_logger.info(
+        self._stat_logger.info(
             {
                 "method": "WebcastRoomUserSeqMessage",
                 "totalUserCount": total,

@@ -17,17 +17,20 @@ NTFY_URL = "http://localhost:10380/mytopic/json"
 # 白名单：主播名 -> 房间号
 WHITELIST = {
     "温缇": "249069870647",
-    "念杳杳": "38082662970",
+    "涂山柒柒": "868467964350",
+    "戏清玥": "729171023487",
 }
 
 # 直播间事件字典，用于在 ntfy 监听器和各主任务之间通信
 room_events = {}
 room_stop_events = {}
 room_log_suffixes = {}
+room_loggers = {}
 for room_id in WHITELIST.values():
     room_events[room_id] = asyncio.Event()
     room_stop_events[room_id] = asyncio.Event()
     room_log_suffixes[room_id] = None
+    room_loggers[room_id] = None
 
 
 async def ntfy_listener():
@@ -118,7 +121,7 @@ async def main_task_for_room(room_id: str):
     register_room_stop_callback(room_id, on_room_stop)
 
     while True:
-        logger = logging.getLogger(f"room_{room_id}")
+        logger = logging.getLogger(__name__)
         logger.info(
             f"Task for room {room_id} is ready and waiting for trigger..."
         )
@@ -130,39 +133,57 @@ async def main_task_for_room(room_id: str):
 
         log_suffix = room_log_suffixes.get(room_id)
         if log_suffix:
-            logging_config.reconfigure_logging(log_suffix, log_path, room_id)
-            logger = logging.getLogger(f"room_{room_id}")
-            logger.info(
+            app_logger, stat_logger = logging_config.setup_room_logger(
+                room_id, log_suffix, log_path
+            )
+            room_loggers[room_id] = (app_logger, stat_logger)
+            app_logger.info(
                 f"Started logging to new file with suffix: {log_suffix}"
             )
 
         reconnect_event = asyncio.Event()
 
         async def on_reconnect():
-            logger.info(f"Room {room_id} connection timeout, reconnecting...")
+            if room_loggers.get(room_id):
+                room_loggers[room_id][0].info(
+                    f"Room {room_id} connection timeout, reconnecting..."
+                )
 
         register_room_reconnect_callback(room_id, on_reconnect)
 
         while True:
-            async with await DoyinLiveRoom.new(room_id) as room:
-                ws = await room.create_websocket()
-                try:
-                    while not ws._ws_session.closed:
-                        await asyncio.sleep(1)
-                except KeyboardInterrupt:
-                    break
+            try:
+                async with await DoyinLiveRoom.new(room_id) as room:
+                    ws = await room.create_websocket()
+                    try:
+                        while not ws._ws_session.closed:
+                            await asyncio.sleep(1)
+                    except KeyboardInterrupt:
+                        break
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if room_loggers.get(room_id):
+                    room_loggers[room_id][0].warning(
+                        f"Room {room_id} connection failed: {e}. Retrying in 5s..."
+                    )
+                await asyncio.sleep(5)
+                continue
             if room_stop_events[room_id].is_set():
                 break
-            logger.info(f"Room {room_id} connection closed, reconnecting...")
+            if room_loggers.get(room_id):
+                room_loggers[room_id][0].info(
+                    f"Room {room_id} connection closed, reconnecting..."
+                )
         if room_stop_events[room_id].is_set():
-            logger.info(
-                f"Task for room {room_id} finished this session. Waiting for next trigger..."
-            )
+            if room_loggers.get(room_id):
+                room_loggers[room_id][0].info(
+                    f"Task for room {room_id} finished this session. Waiting for next trigger..."
+                )
             room_stop_events[room_id].clear()
         else:
-            logger.info(
-                f"Task for room {room_id} finished this session. Waiting for next trigger..."
-            )
+            if room_loggers.get(room_id):
+                room_loggers[room_id][0].info(
+                    f"Task for room {room_id} finished this session. Waiting for next trigger..."
+                )
 
 
 async def run_concurrent_tasks():
@@ -222,8 +243,10 @@ if __name__ == "__main__":
 
     # --- 根据 -w 参数决定运行模式 ---
     if args.watch:
-        # 监视模式：同时运行 ntfy 监听器和主任务（等待触发）
-        logging_config.setup_logging(log_suffix, log_path, room_id)
+        # 监视模式：启用房间前缀，便于区分多房间日志
+        logging_config.setup_app_logging(
+            log_suffix, log_path, enable_room_prefix=True
+        )
         logger = logging.getLogger(__name__)
         logger.info("Running in ntfy watch mode...")
         asyncio.run(run_concurrent_tasks())  # 运行包装后的协程
