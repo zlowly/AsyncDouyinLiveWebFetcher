@@ -14,12 +14,18 @@ import time
 # 定义 ntfy 相关的常量
 NTFY_URL = "http://localhost:10380/mytopic/json"
 
-# 白名单：主播名 -> 房间号
-WHITELIST = {
-    "温缇": "249069870647",
-    "涂山柒柒": "868467964350",
-    "戏清玥": "729171023487",
-}
+
+# 从配置文件加载白名单
+def load_whitelist(config_path: str = "config/whitelist.json") -> dict:
+    """从 JSON 配置文件加载白名单"""
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            return config.get("whitelist", {})
+    return {}
+
+
+WHITELIST = load_whitelist()
 
 # 直播间事件字典，用于在 ntfy 监听器和各主任务之间通信
 room_events = {}
