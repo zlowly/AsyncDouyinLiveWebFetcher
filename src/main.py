@@ -16,8 +16,10 @@ NTFY_URL = "http://localhost:10380/mytopic/json"
 
 
 # 从配置文件加载白名单
-def load_whitelist(config_path: str = "config/whitelist.json") -> dict:
+def load_whitelist() -> dict:
     """从 JSON 配置文件加载白名单"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, "..", "config", "whitelist.json")
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
