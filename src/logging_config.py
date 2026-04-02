@@ -32,6 +32,7 @@ def setup_app_logging(
     root_logger.setLevel(logging.DEBUG)
 
     full_log_path = os.path.join(log_file_path, f"app-{log_file_suffix}.log")
+    os.makedirs(log_file_path, exist_ok=True)
 
     file_handler = logging.FileHandler(full_log_path)
     file_handler.setLevel(logging.DEBUG)

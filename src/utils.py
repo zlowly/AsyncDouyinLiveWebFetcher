@@ -1,5 +1,6 @@
 import hashlib
 import urllib
+import os
 
 from py_mini_racer import MiniRacer
 
@@ -22,7 +23,9 @@ def generate_signature(wss, script_file="sign.js"):
     md5.update(param.encode())
     md5_param = md5.hexdigest()
 
-    with open(f"scripts/{script_file}", "r", encoding="utf8") as f:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(script_dir, "..", "scripts", script_file)
+    with open(script_path, "r", encoding="utf8") as f:
         script = f.read()
 
     ctx = MiniRacer()

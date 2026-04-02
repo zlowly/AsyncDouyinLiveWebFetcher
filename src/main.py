@@ -229,7 +229,9 @@ if __name__ == "__main__":
         "-p",
         "--path",
         type=str,
-        default="logs",
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "logs"
+        ),
         help="指定日志文件的保存路径。",
     )
 
