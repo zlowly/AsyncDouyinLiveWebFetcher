@@ -24,7 +24,7 @@ def generate_signature(wss, script_file="sign.js"):
     md5_param = md5.hexdigest()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    script_path = os.path.join(script_dir, "..", "scripts", script_file)
+    script_path = os.path.join(script_dir, "scripts", script_file)
     with open(script_path, "r", encoding="utf8") as f:
         script = f.read()
 
