@@ -14,6 +14,11 @@ import time
 # 定义 ntfy 相关的常量
 NTFY_URL = "http://localhost:10380/mytopic/json"
 
+# 定义日志路径常量
+DEFAULT_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "logs"
+)
+
 
 # 从配置文件加载白名单
 def load_whitelist() -> dict:
@@ -194,6 +199,50 @@ async def main_task_for_room(room_id: str):
                 )
 
 
+async def main_task_for_room_single(room_id: str):
+    """
+    直接连接指定直播间，不监听 ntfy。
+    """
+    from websocket import (
+        register_room_stop_callback,
+        register_room_reconnect_callback,
+    )
+
+    logger = logging.getLogger(__name__)
+    log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    app_logger, stat_logger = logging_config.setup_room_logger(
+        room_id, log_suffix, log_path
+    )
+    app_logger.info(f"Started logging to new file with suffix: {log_suffix}")
+
+    async def on_room_stop():
+        app_logger.info(f"Room {room_id} stream ended.")
+
+    register_room_stop_callback(room_id, on_room_stop)
+
+    async def on_reconnect():
+        app_logger.info(f"Room {room_id} connection timeout, reconnecting...")
+
+    register_room_reconnect_callback(room_id, on_reconnect)
+
+    while True:
+        try:
+            async with await DoyinLiveRoom.new(room_id) as room:
+                ws = await room.create_websocket()
+                try:
+                    while not ws._ws_session.closed:
+                        await asyncio.sleep(1)
+                except KeyboardInterrupt:
+                    break
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            app_logger.warning(
+                f"Room {room_id} connection failed: {e}. Retrying in 5s..."
+            )
+            await asyncio.sleep(5)
+            continue
+        app_logger.info(f"Room {room_id} connection closed, reconnecting...")
+
+
 async def run_concurrent_tasks():
     """包装多个协程的执行"""
     tasks: list[asyncio.Task] = [asyncio.create_task(ntfy_listener())]
@@ -213,56 +262,26 @@ if __name__ == "__main__":
         "-r",
         "--room",
         type=str,
-        default="249069870647",
-        help="指定直播间的房间ID (默认: 249069870647)",
+        required=False,
+        help="指定直播间的房间ID（不指定则启用监控模式）",
     )
 
-    parser.add_argument(
-        "-s",
-        "--suffix",
-        type=str,
-        default=datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        help="指定日志文件的后缀 (默认: 当前日期时间)",
-    )
-
-    parser.add_argument(
-        "-p",
-        "--path",
-        type=str,
-        default=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "logs"
-        ),
-        help="指定日志文件的保存路径。",
-    )
-
-    # --- 新增参数 ---
-    parser.add_argument(
-        "-w",
-        "--watch",
-        action="store_true",
-        help="启用 ntfy 监听模式，等待消息触发。",
-    )
-
-    # 3. 解析命令行参数
     args = parser.parse_args()
 
-    # 4. 从解析结果中获取参数值
     room_id = args.room
-    log_suffix = args.suffix
-    log_path = args.path
+    log_path = DEFAULT_LOG_PATH
 
-    # --- 根据 -w 参数决定运行模式 ---
-    if args.watch:
-        # 监视模式：启用房间前缀，便于区分多房间日志
+    if room_id:
+        log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        logging_config.setup_logging(log_suffix, log_path, room_id)
+        logger = logging.getLogger(__name__)
+        logger.info("Application started in direct mode.")
+        asyncio.run(main_task_for_room_single(room_id))
+    else:
+        log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         logging_config.setup_app_logging(
             log_suffix, log_path, enable_room_prefix=True
         )
         logger = logging.getLogger(__name__)
-        logger.info("Running in ntfy watch mode...")
-        asyncio.run(run_concurrent_tasks())  # 运行包装后的协程
-    else:
-        # 常规模式：直接运行主任务
-        logging_config.setup_logging(log_suffix, log_path, room_id)
-        logger = logging.getLogger(__name__)
-        logger.info("Application started in normal mode.")
-        asyncio.run(main_task_for_room(room_id))
+        logger.info("Running in watch mode...")
+        asyncio.run(run_concurrent_tasks())
