@@ -70,10 +70,15 @@ class DouyinChatWebSocketClient:
         )
         return instance
 
-    async def close(self):
+    async def close(self, timeout: float = 5.0):
         for task in self._tasks:
             task.cancel()
-        await self._ws_session.close()
+        try:
+            await asyncio.wait_for(
+                self._ws_session.close(code=1000), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            pass
 
     async def _send_heartbeat(self, interval: int = 5):
         try:
@@ -97,9 +102,7 @@ class DouyinChatWebSocketClient:
                 reconnect_cb = room_reconnect_callbacks.get(self._room_id)
                 if reconnect_cb:
                     await reconnect_cb()
-                break
-        if not self._ws_session.closed:
-            await self.close()
+                await self.close()
 
     async def _receive_loop(self):
         try:
