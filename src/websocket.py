@@ -71,14 +71,29 @@ class DouyinChatWebSocketClient:
         return instance
 
     async def close(self, timeout: float = 5.0):
+        print(f"[ROOM-{self._room_id[:8]}] 正在取消内部任务...")
+        logger.info(f"[{self._room_id}] Cancelling internal tasks...")
         for task in self._tasks:
             task.cancel()
+
+        print(
+            f"[ROOM-{self._room_id[:8]}] 等待 WebSocket 关闭 (timeout={timeout}s)..."
+        )
+        logger.info(
+            f"[{self._room_id}] Waiting for WebSocket close (timeout={timeout}s)..."
+        )
         try:
             await asyncio.wait_for(
                 self._ws_session.close(code=1000), timeout=timeout
             )
+            print(f"[ROOM-{self._room_id[:8]}] WebSocket 关闭完成")
+            logger.info(f"[{self._room_id}] WebSocket closed successfully")
         except asyncio.TimeoutError:
-            pass
+            print(f"[ROOM-{self._room_id[:8]}] WebSocket 关闭超时，强制结束")
+            logger.warning(f"[{self._room_id}] WebSocket close timeout")
+        except Exception as e:
+            print(f"[ROOM-{self._room_id[:8]}] WebSocket 关闭异常: {e}")
+            logger.error(f"[{self._room_id}] WebSocket close error: {e}")
 
     async def _send_heartbeat(self, interval: int = 5):
         try:
@@ -87,9 +102,14 @@ class DouyinChatWebSocketClient:
                 await self._ws_session.ping(payload)
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:
-            pass
+            print(f"[HB-{self._room_id[:8]}] 心跳任务收到取消信号")
+            logger.info(f"[{self._room_id}] Heartbeat task cancelled")
+            raise
         except Exception as e:
             logger.exception("Heartbeat error: %s", e)
+        finally:
+            print(f"[HB-{self._room_id[:8]}] 心跳任务退出")
+            logger.debug(f"[{self._room_id}] Heartbeat task exited")
 
     async def _check_connection(self, timeout: int = 60):
         while not self._ws_session.closed:
@@ -103,6 +123,8 @@ class DouyinChatWebSocketClient:
                 if reconnect_cb:
                     await reconnect_cb()
                 await self.close()
+        print(f"[CHK-{self._room_id[:8]}] 连接检查任务退出")
+        logger.debug(f"[{self._room_id}] Connection check task exited")
 
     async def _receive_loop(self):
         try:
@@ -118,7 +140,14 @@ class DouyinChatWebSocketClient:
                 ):
                     break
         except asyncio.CancelledError:
-            pass
+            print(f"[RCV-{self._room_id[:8]}] 接收循环收到取消信号")
+            logger.info(f"[{self._room_id}] Receive loop cancelled")
+            raise
+        except Exception as e:
+            logger.exception(f"[{self._room_id}] Receive loop error: {e}")
+        finally:
+            print(f"[RCV-{self._room_id[:8]}] 接收循环退出")
+            logger.debug(f"[{self._room_id}] Receive loop exited")
 
     async def _handle_binary(self, data: bytes):
         package = PushFrame().parse(data)
