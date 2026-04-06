@@ -85,32 +85,55 @@ async def ntfy_listener():
     print("[NTFY] ntfy_listener 启动")
     logger.info("ntfy_listener started")
     session = None
+    retry_count = 0
+    base_delay = 5
+    max_delay = 60
     try:
         session = aiohttp.ClientSession()
         while not shutdown_event.is_set():
             try:
-                async with asyncio.timeout(2):
-                    async with session.get(NTFY_URL, timeout=60) as r:
-                        r.raise_for_status()
-                        async for line in r.content:
-                            if shutdown_event.is_set():
-                                break
-                            if line:
-                                try:
-                                    message_data = json.loads(
-                                        line.decode("utf-8")
+                async with session.get(NTFY_URL, timeout=60) as r:
+                    r.raise_for_status()
+                    retry_count = 0
+                    async for line in r.content:
+                        if shutdown_event.is_set():
+                            break
+                        if line:
+                            try:
+                                message_data = json.loads(line.decode("utf-8"))
+                                message_text = message_data.get("message")
+                                if message_text:
+                                    logger.info(
+                                        f"Received ntfy message: {message_text}"
                                     )
-                                    message_text = message_data.get("message")
-                                    if message_text:
-                                        logger.info(
-                                            f"Received ntfy message: {message_text}"
-                                        )
-                                        match = re.search(
-                                            r"直播间状态更新：(.*?) 正在直播中",
+                                    match = re.search(
+                                        r"直播间状态更新：(.*?) 正在直播中",
+                                        message_text,
+                                    )
+                                    if match:
+                                        streamer_name = match.group(1).strip()
+                                        for (
+                                            name,
+                                            room_id,
+                                        ) in WHITELIST.items():
+                                            if name in streamer_name:
+                                                logger.info(
+                                                    f"Detected a live broadcast from: {streamer_name} (room: {room_id})."
+                                                )
+                                                room_log_suffixes[room_id] = (
+                                                    datetime.now().strftime(
+                                                        "%Y-%m-%d_%H-%M-%S"
+                                                    )
+                                                )
+                                                room_events[room_id].set()
+                                                break
+                                    else:
+                                        end_match = re.search(
+                                            r"直播间状态更新：(.*?) 直播已结束",
                                             message_text,
                                         )
-                                        if match:
-                                            streamer_name = match.group(
+                                        if end_match:
+                                            streamer_name = end_match.group(
                                                 1
                                             ).strip()
                                             for (
@@ -119,53 +142,34 @@ async def ntfy_listener():
                                             ) in WHITELIST.items():
                                                 if name in streamer_name:
                                                     logger.info(
-                                                        f"Detected a live broadcast from: {streamer_name} (room: {room_id})."
+                                                        f"Detected stream ended for: {streamer_name} (room: {room_id})."
                                                     )
-                                                    room_log_suffixes[
+                                                    room_stop_events[
                                                         room_id
-                                                    ] = datetime.now().strftime(
-                                                        "%Y-%m-%d_%H-%M-%S"
-                                                    )
-                                                    room_events[room_id].set()
+                                                    ].set()
                                                     break
-                                        else:
-                                            end_match = re.search(
-                                                r"直播间状态更新：(.*?) 直播已结束",
-                                                message_text,
-                                            )
-                                            if end_match:
-                                                streamer_name = (
-                                                    end_match.group(1).strip()
-                                                )
-                                                for (
-                                                    name,
-                                                    room_id,
-                                                ) in WHITELIST.items():
-                                                    if name in streamer_name:
-                                                        logger.info(
-                                                            f"Detected stream ended for: {streamer_name} (room: {room_id})."
-                                                        )
-                                                        room_stop_events[
-                                                            room_id
-                                                        ].set()
-                                                        break
-                                except json.JSONDecodeError:
-                                    logger.error(
-                                        f"Could not decode JSON: {line}"
-                                    )
+                            except json.JSONDecodeError:
+                                logger.error(f"Could not decode JSON: {line}")
             except asyncio.TimeoutError:
                 if shutdown_event.is_set():
                     break
-                logger.debug(
+                logger.warning(
                     "ntfy listener connection timed out. Reconnecting..."
                 )
             except aiohttp.ClientError as e:
                 if shutdown_event.is_set():
                     break
-                logger.error(
-                    f"An aiohttp error occurred in ntfy listener: {e}. Retrying in 5 seconds..."
-                )
-                await asyncio.sleep(5)
+                retry_count += 1
+                delay = min(base_delay * (2 ** (retry_count - 1)), max_delay)
+                if hasattr(e, "status") and e.status == 429:
+                    logger.warning(
+                        f"ntfy server rate limited (429). Retry {retry_count}, waiting {delay}s..."
+                    )
+                else:
+                    logger.warning(
+                        f"An aiohttp error occurred in ntfy listener: {e}. Retry {retry_count}, waiting {delay}s..."
+                    )
+                await asyncio.sleep(delay)
     except asyncio.CancelledError:
         print("[NTFY] ntfy_listener 收到取消信号")
         logger.info("ntfy_listener cancelled")
@@ -282,6 +286,8 @@ async def main_task_for_room_single(room_id: str):
         register_room_reconnect_callback,
     )
 
+    stream_ended_event = asyncio.Event()
+
     log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     app_logger, stat_logger = logging_config.setup_room_logger(
         room_id, log_suffix, log_path
@@ -290,6 +296,7 @@ async def main_task_for_room_single(room_id: str):
 
     async def on_room_stop():
         app_logger.info(f"Room {room_id} stream ended.")
+        stream_ended_event.set()
 
     register_room_stop_callback(room_id, on_room_stop)
 
@@ -298,7 +305,7 @@ async def main_task_for_room_single(room_id: str):
 
     register_room_reconnect_callback(room_id, on_reconnect)
 
-    while not shutdown_event.is_set():
+    while not shutdown_event.is_set() and not stream_ended_event.is_set():
         try:
             async with await DoyinLiveRoom.new(room_id) as room:
                 ws = await room.create_websocket()
@@ -306,11 +313,22 @@ async def main_task_for_room_single(room_id: str):
                     while (
                         not ws._ws_session.closed
                         and not shutdown_event.is_set()
+                        and not stream_ended_event.is_set()
                     ):
                         await asyncio.sleep(1)
                 finally:
                     await ws.close(timeout=5)
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            app_logger.warning(
+                f"Room {room_id} connection failed: {e}. Retrying in 5s..."
+            )
+            await asyncio.sleep(5)
+            continue
+        except ValueError as e:
+            if "Invalid webrid" in str(e):
+                if stream_ended_event.is_set():
+                    app_logger.info(f"Room offline, exiting...")
+                    break
             app_logger.warning(
                 f"Room {room_id} connection failed: {e}. Retrying in 5s..."
             )
