@@ -92,15 +92,25 @@ async def ntfy_listener():
         session = aiohttp.ClientSession()
         while not shutdown_event.is_set():
             try:
-                async with session.get(NTFY_URL, timeout=60) as r:
+                async with session.get(
+                    NTFY_URL,
+                    timeout=aiohttp.ClientTimeout(total=300, sock_read=60),
+                ) as r:
                     r.raise_for_status()
                     retry_count = 0
                     async for line in r.content:
                         if shutdown_event.is_set():
                             break
-                        if line:
+                        line_str = line.decode("utf-8").strip()
+                        logger.debug(f"Received SSE line: {line_str}")
+                        if line_str.startswith("data: "):
+                            json_str = line_str[6:]  # Remove "data: " prefix
                             try:
-                                message_data = json.loads(line.decode("utf-8"))
+                                message_data = json.loads(json_str)
+                                event_type = message_data.get("event")
+                                logger.debug(f"SSE event type: {event_type}")
+                                if event_type == "keepalive":
+                                    continue
                                 message_text = message_data.get("message")
                                 if message_text:
                                     logger.info(
@@ -180,7 +190,7 @@ async def ntfy_listener():
         logger.info("ntfy_listener shutdown complete")
 
 
-NTFY_URL = "http://localhost:10380/mytopic/json"
+NTFY_URL = "http://localhost:10380/mytopic/sse"
 
 
 async def main_task_for_room(room_id: str):
