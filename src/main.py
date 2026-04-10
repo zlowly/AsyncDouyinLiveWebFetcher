@@ -163,7 +163,7 @@ async def ntfy_listener():
             except asyncio.TimeoutError:
                 if shutdown_event.is_set():
                     break
-                logger.warning(
+                logger.debug(
                     "ntfy listener connection timed out. Reconnecting..."
                 )
             except aiohttp.ClientError as e:
