@@ -258,6 +258,12 @@ async def main_task_for_room(room_id: str):
                             await asyncio.sleep(1)
                     finally:
                         await ws.close(timeout=5)
+            except asyncio.CancelledError:
+                if room_loggers.get(room_id):
+                    room_loggers[room_id][0].info(
+                        f"Room {room_id} task cancelled, reconnecting..."
+                    )
+                continue
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 if room_loggers.get(room_id):
                     room_loggers[room_id][0].warning(
@@ -328,6 +334,9 @@ async def main_task_for_room_single(room_id: str):
                         await asyncio.sleep(1)
                 finally:
                     await ws.close(timeout=5)
+        except asyncio.CancelledError:
+            app_logger.info(f"Room {room_id} task cancelled, reconnecting...")
+            continue
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             app_logger.warning(
                 f"Room {room_id} connection failed: {e}. Retrying in 5s..."
