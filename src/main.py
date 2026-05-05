@@ -257,7 +257,8 @@ async def main_task_for_room(room_id: str):
                         ):
                             await asyncio.sleep(1)
                     finally:
-                        await ws.close(timeout=5)
+                        if not ws._ws_session.closed:
+                            await ws.close(timeout=5)
             except asyncio.CancelledError:
                 if room_loggers.get(room_id):
                     room_loggers[room_id][0].info(
@@ -333,7 +334,8 @@ async def main_task_for_room_single(room_id: str):
                     ):
                         await asyncio.sleep(1)
                 finally:
-                    await ws.close(timeout=5)
+                    if not ws._ws_session.closed:
+                        await ws.close(timeout=5)
         except asyncio.CancelledError:
             app_logger.info(f"Room {room_id} task cancelled, reconnecting...")
             continue

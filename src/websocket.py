@@ -73,8 +73,10 @@ class DouyinChatWebSocketClient:
     async def close(self, timeout: float = 5.0):
         print(f"[ROOM-{self._room_id[:8]}] 正在取消内部任务...")
         logger.info(f"[{self._room_id}] Cancelling internal tasks...")
+        current_task = asyncio.current_task()
         for task in self._tasks:
-            task.cancel()
+            if task is not current_task:
+                task.cancel()
 
         print(
             f"[ROOM-{self._room_id[:8]}] 等待 WebSocket 关闭 (timeout={timeout}s)..."
