@@ -87,9 +87,9 @@ def process_log_file(log_file_path, skip_lines=0, output_format="tsv"):
         elif output_format == "tsv":
             writer = csv.writer(sys.stdout, delimiter='\t', lineterminator='\n')
             if extracted_messages:
-                writer.writerow(["timestamp", "name", "content"])
+                writer.writerow(["timestamp", "speaker", "content"])
             for msg in extracted_messages:
-                writer.writerow([msg.get("timestamp", ""), msg.get("name", ""), msg.get("content", "")])
+                writer.writerow([msg.get("timestamp", ""), msg.get("speaker", ""), msg.get("content", "")])
         else:
             print(f"错误: 不支持的输出格式 '{output_format}'。可选 'tsv' 或 'json'。", file=sys.stderr)
             sys.exit(1)

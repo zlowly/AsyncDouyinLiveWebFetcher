@@ -77,6 +77,8 @@ def setup_room_logger(room_id: str, suffix: str, log_file_path: str) -> tuple:
     stat_logger = logging.getLogger(f"stat_{room_id}")
     stat_logger.setLevel(logging.INFO)
     stat_logger.propagate = False
+    for handler in stat_logger.handlers:
+        stat_logger.removeHandler(handler)
     stat_logger.addHandler(stat_file_handler)
 
     return app_logger, stat_logger
