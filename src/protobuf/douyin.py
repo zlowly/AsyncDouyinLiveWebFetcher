@@ -85,7 +85,9 @@ class ChatMessage(betterproto.Message):
     gift_image: "Image" = betterproto.message_field(10)
     agree_msg_id: int = betterproto.uint64_field(11)
     priority_level: int = betterproto.uint32_field(12)
-    landscape_area_common: "LandscapeAreaCommon" = betterproto.message_field(13)
+    landscape_area_common: "LandscapeAreaCommon" = betterproto.message_field(
+        13
+    )
     event_time: int = betterproto.uint64_field(15)
     send_review: bool = betterproto.bool_field(16)
     from_intercom: bool = betterproto.bool_field(17)
@@ -108,10 +110,14 @@ class LandscapeAreaCommon(betterproto.Message):
 @dataclass
 class RoomUserSeqMessage(betterproto.Message):
     common: "Common" = betterproto.message_field(1)
-    ranks_list: List["RoomUserSeqMessageContributor"] = betterproto.message_field(2)
+    ranks_list: List["RoomUserSeqMessageContributor"] = (
+        betterproto.message_field(2)
+    )
     total: int = betterproto.int64_field(3)
     pop_str: str = betterproto.string_field(4)
-    seats_list: List["RoomUserSeqMessageContributor"] = betterproto.message_field(5)
+    seats_list: List["RoomUserSeqMessageContributor"] = (
+        betterproto.message_field(5)
+    )
     popularity: int = betterproto.int64_field(6)
     total_user: int = betterproto.int64_field(7)
     total_user_str: str = betterproto.string_field(8)
@@ -776,9 +782,13 @@ class ProductChangeMessage(betterproto.Message):
     common: "Common" = betterproto.message_field(1)
     update_timestamp: int = betterproto.int64_field(2)
     update_toast: str = betterproto.string_field(3)
-    update_product_info_list: List["ProductInfo"] = betterproto.message_field(4)
+    update_product_info_list: List["ProductInfo"] = betterproto.message_field(
+        4
+    )
     total: int = betterproto.int64_field(5)
-    update_category_info_list: List["CategoryInfo"] = betterproto.message_field(8)
+    update_category_info_list: List["CategoryInfo"] = (
+        betterproto.message_field(8)
+    )
 
 
 @dataclass

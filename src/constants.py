@@ -8,12 +8,15 @@ from yarl import URL
 class CONSTANTS:
     BROWSER_NAME = "Mozilla"
     BROWSER_VERSION = (
-        "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
+        "5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko)"
         "Chrome/138.0.0.0 Safari/537.36"
     )
     USER_AGENT = f"{BROWSER_NAME}/{BROWSER_VERSION}"
     BASE = "https://live.douyin.com/"
     WS_BASE = "wss://webcast100-ws-web-lq.douyin.com/"
+    # 访问 live.douyin.com 前种下的会话 cookie，失效会导致房间页面拉取失败。
+    AC_NONCE = "0123407cc00a9e438deb4"
 
     @staticmethod
     @lru_cache(maxsize=10)

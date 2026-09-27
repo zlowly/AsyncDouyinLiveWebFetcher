@@ -54,6 +54,10 @@ docstring-quotes = "double"
 inline-quotes = "double"
 multiline-quotes = "double"
 
+[lint.per-file-ignores]
+# protoc/betterproto 生成文件，不手改，不参与行宽规则。
+"src/protobuf/**" = ["E501"]
+
 [format]
 # Like Black, use double quotes for strings.
 quote-style = "double"

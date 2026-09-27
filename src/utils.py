@@ -1,13 +1,30 @@
+import asyncio
 import hashlib
-import urllib
 import os
+import urllib
 
 from py_mini_racer import MiniRacer
 
 
+async def wait_first(*awaitables):
+    """
+    等待任意一个 awaitable 先完成，完成后取消并回收其余任务。
+
+    用于"连接关闭"与"程序关闭"之类的竞态等待，替代 1 秒轮询。
+    """
+    tasks = [asyncio.create_task(a) for a in awaitables]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def generate_signature(wss, script_file="sign.js"):
     """
-    出现gbk编码问题则修改 python模块subprocess.py的源码中Popen类的__init__函数参数encoding值为 "utf-8"
+    出现gbk编码问题则修改 python模块subprocess.py的源码中
+    Popen类的__init__函数参数encoding值为 "utf-8"
     """
     params = (
         "live_id,aid,version_code,webcast_sdk_version,"

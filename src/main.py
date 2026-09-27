@@ -1,16 +1,20 @@
 import argparse
 import asyncio
 import logging
-import logging_config
-from liveroom import DoyinLiveRoom
-from datetime import datetime
-import sys
-import os
-import aiohttp
-import json
-import re
 import signal
+import sys
 import time
+from datetime import datetime
+
+import logging_config
+import ui
+from ntfy import ntfy_listener
+from session import (
+    RoomContext,
+    single_room_task,
+    watch_room_task,
+)
+from whitelist import load_whitelist
 
 shutdown_event = asyncio.Event()
 start_time = time.time()
@@ -24,370 +28,86 @@ def handle_signal(signum, frame):
     elapsed = time.time() - start_time
 
     if shutdown_count == 1:
-        print(
-            f"\n[MAIN] 收到信号 {signum} (已运行 {elapsed:.0f}s)，开始优雅关闭..."
+        ui.info(
+            f"\n[MAIN] 收到信号 {signum} (已运行 {elapsed:.0f}s)，"
+            "开始优雅关闭..."
         )
         logger.info(
             f"Received signal {signum}, initiating graceful shutdown..."
         )
         shutdown_event.set()
     elif shutdown_count == 2:
-        print(f"\n[MAIN] 强制关闭请求...")
+        ui.info("\n[MAIN] 强制关闭请求...")
         logger.warning("Force shutdown requested")
     else:
-        print(f"\n[MAIN] 程序即将退出")
+        ui.info("\n[MAIN] 程序即将退出")
 
 
-async def safe_close_session(session):
-    if session is None:
-        return
-    try:
-        print("[NTFY] 正在关闭 HTTP Session...")
-        await session.close()
-        print("[NTFY] HTTP Session 关闭完成")
-    except Exception as e:
-        print(f"[NTFY] HTTP Session 关闭异常: {e}")
-        logger.debug(f"Session close error: {e}")
+def handle_live_start(ctx: RoomContext, streamer_name: str) -> None:
+    """
+    处理 ntfy 的开播通知，设置触发事件和本次会话的日志 suffix。
 
-
-signal.signal(signal.SIGINT, handle_signal)
-signal.signal(signal.SIGTERM, handle_signal)
-
-DEFAULT_LOG_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "logs"
-)
-
-
-def load_whitelist() -> dict:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_dir, "..", "config", "whitelist.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            return config.get("whitelist", {})
-    return {}
-
-
-WHITELIST = load_whitelist()
-
-room_events = {}
-room_stop_events = {}
-room_log_suffixes = {}
-room_loggers = {}
-for room_id in WHITELIST.values():
-    room_events[room_id] = asyncio.Event()
-    room_stop_events[room_id] = asyncio.Event()
-    room_log_suffixes[room_id] = None
-    room_loggers[room_id] = None
-
-
-async def ntfy_listener():
-    print("[NTFY] ntfy_listener 启动")
-    logger.info("ntfy_listener started")
-    session = None
-    retry_count = 0
-    base_delay = 5
-    max_delay = 60
-    try:
-        session = aiohttp.ClientSession()
-        while not shutdown_event.is_set():
-            try:
-                async with session.get(
-                    NTFY_URL,
-                    timeout=aiohttp.ClientTimeout(total=300, sock_read=60),
-                ) as r:
-                    r.raise_for_status()
-                    retry_count = 0
-                    async for line in r.content:
-                        if shutdown_event.is_set():
-                            break
-                        line_str = line.decode("utf-8").strip()
-                        logger.debug(f"Received SSE line: {line_str}")
-                        if line_str.startswith("data: "):
-                            json_str = line_str[6:]  # Remove "data: " prefix
-                            try:
-                                message_data = json.loads(json_str)
-                                event_type = message_data.get("event")
-                                logger.debug(f"SSE event type: {event_type}")
-                                if event_type == "keepalive":
-                                    continue
-                                message_text = message_data.get("message")
-                                if message_text:
-                                    logger.info(
-                                        f"Received ntfy message: {message_text}"
-                                    )
-                                    match = re.search(
-                                        r"直播间状态更新：(.*?) 正在直播中",
-                                        message_text,
-                                    )
-                                    if match:
-                                        streamer_name = match.group(1).strip()
-                                        for (
-                                            name,
-                                            room_id,
-                                        ) in WHITELIST.items():
-                                            if name in streamer_name:
-                                                logger.info(
-                                                    f"Detected a live broadcast from: {streamer_name} (room: {room_id})."
-                                                )
-                                                room_log_suffixes[room_id] = (
-                                                    datetime.now().strftime(
-                                                        "%Y-%m-%d_%H-%M-%S"
-                                                    )
-                                                )
-                                                room_events[room_id].set()
-                                                break
-                                    else:
-                                        end_match = re.search(
-                                            r"直播间状态更新：(.*?) 直播已结束",
-                                            message_text,
-                                        )
-                                        if end_match:
-                                            streamer_name = end_match.group(
-                                                1
-                                            ).strip()
-                                            for (
-                                                name,
-                                                room_id,
-                                            ) in WHITELIST.items():
-                                                if name in streamer_name:
-                                                    logger.info(
-                                                        f"Detected stream ended for: {streamer_name} (room: {room_id})."
-                                                    )
-                                                    room_stop_events[
-                                                        room_id
-                                                    ].set()
-                                                    break
-                            except json.JSONDecodeError:
-                                logger.error(f"Could not decode JSON: {line}")
-            except asyncio.TimeoutError:
-                if shutdown_event.is_set():
-                    break
-                logger.debug(
-                    "ntfy listener connection timed out. Reconnecting..."
-                )
-            except aiohttp.ClientError as e:
-                if shutdown_event.is_set():
-                    break
-                retry_count += 1
-                delay = min(base_delay * (2 ** (retry_count - 1)), max_delay)
-                if hasattr(e, "status") and e.status == 429:
-                    logger.warning(
-                        f"ntfy server rate limited (429). Retry {retry_count}, waiting {delay}s..."
-                    )
-                else:
-                    logger.warning(
-                        f"An aiohttp error occurred in ntfy listener: {e}. Retry {retry_count}, waiting {delay}s..."
-                    )
-                await asyncio.sleep(delay)
-    except asyncio.CancelledError:
-        print("[NTFY] ntfy_listener 收到取消信号")
-        logger.info("ntfy_listener cancelled")
-        raise
-    finally:
-        await safe_close_session(session)
-        print("[NTFY] ntfy_listener 关闭完成")
-        logger.info("ntfy_listener shutdown complete")
-
-
-NTFY_URL = "http://localhost:10380/mytopic/sse"
-
-
-async def main_task_for_room(room_id: str):
-    print(f"[ROOM-{room_id[:8]}] main_task_for_room 启动，等待触发")
-    logger.info(f"Task for room {room_id} started")
-
-    from websocket import (
-        register_room_stop_callback,
-        register_room_reconnect_callback,
+    会话进行中收到重复的开播通知时直接忽略：否则 suffix 会被覆盖，
+    等当前会话结束再次触发时会为同一场直播多建一个 stats 文件。
+    """
+    logger.info(
+        f"Detected a live broadcast from: {streamer_name} "
+        f"(room: {ctx.web_rid})."
     )
-
-    async def on_room_stop():
-        logger.info(f"Room {room_id} stream ended.")
-        room_stop_events[room_id].set()
-
-    register_room_stop_callback(room_id, on_room_stop)
-
-    waiting_printed = False
-    while not shutdown_event.is_set():
-        if not waiting_printed:
-            logger.info(
-                f"Task for room {room_id} is ready and waiting for trigger..."
-            )
-            waiting_printed = True
-        try:
-            await asyncio.wait_for(room_events[room_id].wait(), timeout=1)
-        except asyncio.TimeoutError:
-            continue
-        if shutdown_event.is_set():
-            break
-        waiting_printed = False
-        print(f"[ROOM-{room_id[:8]}] 收到直播触发，开始连接...")
+    if ctx.active:
         logger.info(
-            f"Task for room {room_id} received trigger. Starting application..."
+            f"Room {ctx.web_rid} session already active, ignoring "
+            "duplicate live notification."
         )
-        room_events[room_id].clear()
-
-        log_suffix = room_log_suffixes.get(room_id)
-        if log_suffix:
-            app_logger, stat_logger = logging_config.setup_room_logger(
-                room_id, log_suffix, log_path
-            )
-            room_loggers[room_id] = (app_logger, stat_logger)
-            app_logger.info(
-                f"Started logging to new file with suffix: {log_suffix}"
-            )
-
-        async def on_reconnect():
-            if room_loggers.get(room_id):
-                room_loggers[room_id][0].info(
-                    f"Room {room_id} connection timeout, reconnecting..."
-                )
-
-        register_room_reconnect_callback(room_id, on_reconnect)
-
-        while not shutdown_event.is_set():
-            try:
-                async with await DoyinLiveRoom.new(room_id) as room:
-                    ws = await room.create_websocket()
-                    try:
-                        while (
-                            not ws._ws_session.closed
-                            and not shutdown_event.is_set()
-                        ):
-                            await asyncio.sleep(1)
-                    finally:
-                        if not ws._ws_session.closed:
-                            await ws.close(timeout=5)
-            except asyncio.CancelledError:
-                if room_loggers.get(room_id):
-                    room_loggers[room_id][0].info(
-                        f"Room {room_id} task cancelled, reconnecting..."
-                    )
-                continue
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                if room_loggers.get(room_id):
-                    room_loggers[room_id][0].warning(
-                        f"Room {room_id} connection failed: {e}. Retrying in 5s..."
-                    )
-                await asyncio.sleep(5)
-                continue
-            if room_stop_events[room_id].is_set():
-                break
-            if room_loggers.get(room_id):
-                room_loggers[room_id][0].info(
-                    f"Room {room_id} connection closed, reconnecting..."
-                )
-        if room_stop_events[room_id].is_set():
-            if room_loggers.get(room_id):
-                room_loggers[room_id][0].info(
-                    f"Task for room {room_id} finished this session. Waiting for next trigger..."
-                )
-            room_stop_events[room_id].clear()
-        else:
-            if room_loggers.get(room_id):
-                room_loggers[room_id][0].info(
-                    f"Task for room {room_id} finished this session. Waiting for next trigger..."
-                )
-
-    print(f"[ROOM-{room_id[:8]}] main_task_for_room 关闭完成")
-    logger.info(f"Task for room {room_id} shutdown complete")
+        return
+    ctx.log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    ctx.start_event.set()
 
 
-async def main_task_for_room_single(room_id: str):
-    print(f"[SINGLE-{room_id[:8]}] main_task_for_room_single 启动")
-    logger.info(f"Single mode started for room {room_id}")
-
-    from websocket import (
-        register_room_stop_callback,
-        register_room_reconnect_callback,
+def handle_live_end(ctx: RoomContext, streamer_name: str) -> None:
+    """处理 ntfy 的下播通知，触发当前会话停止。"""
+    logger.info(
+        f"Detected stream ended for: {streamer_name} (room: {ctx.web_rid})."
     )
-
-    stream_ended_event = asyncio.Event()
-
-    log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    app_logger, stat_logger = logging_config.setup_room_logger(
-        room_id, log_suffix, log_path
-    )
-    app_logger.info(f"Started logging to new file with suffix: {log_suffix}")
-
-    async def on_room_stop():
-        app_logger.info(f"Room {room_id} stream ended.")
-        stream_ended_event.set()
-
-    register_room_stop_callback(room_id, on_room_stop)
-
-    async def on_reconnect():
-        app_logger.info(f"Room {room_id} connection timeout, reconnecting...")
-
-    register_room_reconnect_callback(room_id, on_reconnect)
-
-    while not shutdown_event.is_set() and not stream_ended_event.is_set():
-        try:
-            async with await DoyinLiveRoom.new(room_id) as room:
-                ws = await room.create_websocket()
-                try:
-                    while (
-                        not ws._ws_session.closed
-                        and not shutdown_event.is_set()
-                        and not stream_ended_event.is_set()
-                    ):
-                        await asyncio.sleep(1)
-                finally:
-                    if not ws._ws_session.closed:
-                        await ws.close(timeout=5)
-        except asyncio.CancelledError:
-            app_logger.info(f"Room {room_id} task cancelled, reconnecting...")
-            continue
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            app_logger.warning(
-                f"Room {room_id} connection failed: {e}. Retrying in 5s..."
-            )
-            await asyncio.sleep(5)
-            continue
-        except ValueError as e:
-            if "Invalid webrid" in str(e):
-                if stream_ended_event.is_set():
-                    app_logger.info(f"Room offline, exiting...")
-                    break
-            app_logger.warning(
-                f"Room {room_id} connection failed: {e}. Retrying in 5s..."
-            )
-            await asyncio.sleep(5)
-            continue
-        app_logger.info(f"Room {room_id} connection closed, reconnecting...")
-
-    print(f"[SINGLE-{room_id[:8]}] main_task_for_room_single 关闭完成")
-    logger.info("main_task_for_room_single shutdown complete")
+    ctx.stop_event.set()
 
 
-async def run_concurrent_tasks():
-    print("[MAIN] 启动 TaskGroup，运行所有任务...")
+async def run_watch_mode(whitelist: dict, contexts: dict) -> None:
+    """watch 模式：ntfy 监听 + 每个白名单房间一个任务。"""
+    ui.info("[MAIN] 启动 TaskGroup，运行所有任务...")
     logger.info("Starting TaskGroup with all tasks...")
+
+    def on_start(web_rid: str, streamer_name: str) -> None:
+        handle_live_start(contexts[web_rid], streamer_name)
+
+    def on_end(web_rid: str, streamer_name: str) -> None:
+        handle_live_end(contexts[web_rid], streamer_name)
+
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(ntfy_listener())
-            for room_id in WHITELIST.values():
-                tg.create_task(main_task_for_room(room_id))
+            tg.create_task(
+                ntfy_listener(shutdown_event, whitelist, on_start, on_end)
+            )
+            for ctx in contexts.values():
+                tg.create_task(watch_room_task(ctx, shutdown_event))
     except BaseExceptionGroup as EG:
         for exc in EG.exceptions:
             if isinstance(exc, asyncio.CancelledError):
-                print("[MAIN] TaskGroup 收到取消信号")
+                ui.info("[MAIN] TaskGroup 收到取消信号")
                 logger.info("TaskGroup cancelled")
             else:
                 logger.error(f"TaskGroup exception: {exc}")
     except asyncio.CancelledError:
-        print("[MAIN] TaskGroup 收到取消信号")
+        ui.info("[MAIN] TaskGroup 收到取消信号")
         logger.info("TaskGroup cancelled")
-    print("[MAIN] TaskGroup 退出，所有任务已关闭")
+    ui.info("[MAIN] TaskGroup 退出，所有任务已关闭")
     logger.info("All tasks shut down")
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="运行直播间监控应用，并可自定义房间ID和日志文件名。"
     )
-
     parser.add_argument(
         "-r",
         "--room",
@@ -395,30 +115,36 @@ if __name__ == "__main__":
         required=False,
         help="指定直播间的房间ID（不指定则启用监控模式）",
     )
-
     args = parser.parse_args()
 
-    room_id = args.room
-    log_path = DEFAULT_LOG_PATH
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
 
-    if room_id:
+    if args.room:
         log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logging_config.setup_logging(log_suffix, log_path, room_id)
+        logging_config.setup_app_logging(log_suffix, room_id=args.room)
         logger.info("Application started in direct mode.")
         try:
-            asyncio.run(main_task_for_room_single(room_id))
+            asyncio.run(single_room_task(args.room, shutdown_event))
         except KeyboardInterrupt:
             pass
     else:
         log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logging_config.setup_app_logging(
-            log_suffix, log_path, enable_room_prefix=True
-        )
+        logging_config.setup_app_logging(log_suffix, enable_room_prefix=True)
         logger.info("Running in watch mode...")
+        whitelist = load_whitelist()
+        contexts = {
+            web_rid: RoomContext(web_rid=web_rid)
+            for web_rid in whitelist.values()
+        }
         try:
-            asyncio.run(run_concurrent_tasks())
+            asyncio.run(run_watch_mode(whitelist, contexts))
         except KeyboardInterrupt:
             pass
 
-    print("[MAIN] 程序退出")
+    ui.info("[MAIN] 程序退出")
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
