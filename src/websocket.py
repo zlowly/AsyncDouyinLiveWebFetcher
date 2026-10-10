@@ -27,10 +27,14 @@ from protobuf.douyin import (
 logger = logging.getLogger(__name__)
 
 
-def _dump_debug(message):
-    """仅在 DEBUG 级别开启时才做整条消息的 JSON 序列化。"""
+def _dump_debug(message, room_id=""):
+    """仅在 DEBUG 级别开启时才做整条消息的 JSON 序列化。
+
+    room_id 通过 extra 传给事件库 —— payload 里的 common.roomId
+    每次会话都变，且 99.8% 的 DEBUG 行正文里没有 [room_id] 前缀。
+    """
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug("%s", message.to_json())
+        logger.debug("%s", message.to_json(), extra={"room_id": room_id})
 
 
 class DouyinChatWebSocketClient:
@@ -221,7 +225,7 @@ class DouyinChatWebSocketClient:
         pay_lvl = message.user.pay_grade.level
         fans_lvl = message.user.fans_club.data.level
         content = message.content
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         self._stat_logger.info(
             {
                 "method": "WebcastChatMessage",
@@ -247,7 +251,7 @@ class DouyinChatWebSocketClient:
         fans_lvl = message.user.fans_club.data.level
         gift_name = message.gift.name
         gift_cnt = message.combo_count
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         self._stat_logger.info(
             {
                 "method": "WebcastGiftMessage",
@@ -269,7 +273,7 @@ class DouyinChatWebSocketClient:
     def _parseLikeMsg(self, payload):
         """点赞消息（不打印到控制台，字段见 message）。"""
         message = LikeMessage().parse(payload)
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
 
     def _parseMemberMsg(self, payload):
         """进入直播间消息"""
@@ -279,7 +283,7 @@ class DouyinChatWebSocketClient:
         pay_lvl = message.user.pay_grade.level
         fans_lvl = message.user.fans_club.data.level
         gender = ["保密", "男", "女"][message.user.gender]
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         self._stat_logger.info(
             {
                 "method": "WebcastMemberMessage",
@@ -302,7 +306,7 @@ class DouyinChatWebSocketClient:
         message = SocialMessage().parse(payload)
         user_name = message.user.nick_name
         pay_lvl = message.user.pay_grade.level
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         ui.info(
             f"{time_str}【关注msg】"
             f"[white on #7386ea]{pay_lvl}[/white on #7386ea] "
@@ -322,7 +326,7 @@ class DouyinChatWebSocketClient:
                 "audienceCount": current,
             }
         )
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         ui.info(
             f"{time_str}【统计msg】当前观看人数: {current}, "
             f"累计观看人数: {total}"
@@ -333,7 +337,7 @@ class DouyinChatWebSocketClient:
         time_str = datetime.now().strftime("%H:%M:%S")
         message = FansclubMessage().parse(payload)
         content = message.content
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         ui.info(f"{time_str}【粉丝团msg】 {content}")
 
     def _parseEmojiChatMsg(self, payload):
@@ -342,7 +346,7 @@ class DouyinChatWebSocketClient:
         message = EmojiChatMessage().parse(payload)
         user_name = message.user.nick_name
         default_content = message.default_content
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         ui.info(
             f"{time_str}【聊天表情包id】{user_name}: "
             f"default_content: {default_content}"
@@ -353,26 +357,26 @@ class DouyinChatWebSocketClient:
         message = RoomMessage().parse(payload)
         common = message.common
         room_id = common.room_id
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         ui.info(f"{time_str}【直播间msg】直播间id:{room_id}")
 
     def _parseRoomStatsMsg(self, payload):
         time_str = datetime.now().strftime("%H:%M:%S")
         message = RoomStatsMessage().parse(payload)
         display_long = message.display_long
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
         ui.info(f"{time_str}【直播间统计msg】{display_long}")
 
     def _parseRankMsg(self, payload):
         """排行榜消息（字段见 message.ranks_list）。"""
         message = RoomRankMessage().parse(payload)
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
 
     async def _parseControlMsg(self, payload):
         """直播间状态消息"""
         time_str = datetime.now().strftime("%H:%M:%S")
         message = ControlMessage().parse(payload)
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)
 
         if message.status == 3:
             ui.info(f"{time_str} 直播间已结束")
@@ -384,4 +388,4 @@ class DouyinChatWebSocketClient:
     def _parseRoomStreamAdaptationMsg(self, payload):
         """码率自适应消息（类型见 message.adaptation_type）。"""
         message = RoomStreamAdaptationMessage().parse(payload)
-        _dump_debug(message)
+        _dump_debug(message, self._room_id)

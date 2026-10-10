@@ -4,3 +4,17 @@ __pycache__/
 logs/
 src/logs
 src/json
+
+# 事件数据库（SQLite 会额外生成 -wal / -shm 副本，只忽略 .db 不够）
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.duckdb*
+*.wal
+*.tmp/
+
+# 第三方工具输出
+graphify-out/
+.opencode/

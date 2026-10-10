@@ -1,28 +1,80 @@
+import atexit
 import json
 import logging
 import os
 import sys
 
+import store as event_store
+
 DEFAULT_LOG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "logs"
 )
 
+# JsonFormatter 自己写入的基础字段，payload 顶层若出现同名 key 会覆盖它们。
+BASE_FIELDS = frozenset({"timestamp", "level", "name", "message"})
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
+        raw_message = record.getMessage()
         log_record = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "name": record.name,
-            "message": record.getMessage(),
+            "message": raw_message,
         }
         try:
-            msg_dict = json.loads(record.getMessage())
-            log_record.update(msg_dict)
+            payload = json.loads(raw_message)
         except (json.JSONDecodeError, TypeError):
-            pass
+            payload = None
+
+        if isinstance(payload, dict):
+            log_record.update(payload)
+            # payload 的顶层 key 已经摊平进 log_record，message 只是同一份
+            # 内容的字符串副本，可以省掉（日志体积约减半）。
+            # 若 payload 会覆盖基础字段，则保留 message 以免丢信息。
+            if not (BASE_FIELDS & payload.keys()):
+                del log_record["message"]
 
         return json.dumps(log_record, ensure_ascii=False)
+
+
+def _attach_event_store(
+    log_file_suffix: str,
+    room_id: str | None,
+    db_path: str | None,
+) -> logging.Handler | None:
+    """把实时事件库 handler 挂到 root logger 上。
+
+    任何失败都只降级 —— 数据库绝不能把采集主流程带崩。
+    """
+    # 显式传空串表示关闭实时入库。
+    if db_path == "":
+        return None
+
+    target = db_path or event_store.DEFAULT_DB_PATH
+
+    try:
+        store_obj = event_store.SqliteEventStore(target)
+        handler = event_store.SqliteLogHandler(
+            store_obj,
+            room_id=room_id or "",
+            session=log_file_suffix,
+        )
+    except Exception as exc:  # noqa: BLE001 - 降级不影响日志本身
+        logging.getLogger(__name__).warning(
+            "Event store disabled, file logging unaffected: %s", exc
+        )
+        return None
+
+    logging.getLogger().addHandler(handler)
+    atexit.register(handler.close)
+    logging.getLogger(__name__).info(
+        "Event store enabled: %s (session=%s)",
+        os.path.abspath(target),
+        log_file_suffix,
+    )
+    return handler
 
 
 def setup_app_logging(
@@ -30,6 +82,7 @@ def setup_app_logging(
     log_file_path: str = DEFAULT_LOG_PATH,
     enable_room_prefix: bool = False,
     room_id: str | None = None,
+    db_path: str | None = None,
 ):
     """
     配置统一的应用日志系统，只设置控制台和主应用日志文件。
@@ -37,6 +90,8 @@ def setup_app_logging(
 
     room_id 提前传入时会先建好该房间的日志目录（单房间模式），
     供后续 setup_room_logger 写入统计日志。
+
+    db_path 传空串可关闭实时入库，否则默认写 data/events.db。
     """
     if room_id:
         os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
@@ -65,6 +120,7 @@ def setup_app_logging(
 
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
+    _attach_event_store(log_file_suffix, room_id, db_path)
 
     logging.info("App logging system configured successfully.")
 
