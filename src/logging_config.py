@@ -43,14 +43,14 @@ def _attach_event_store(
     log_file_suffix: str,
     room_id: str | None,
     db_path: str | None,
-) -> logging.Handler | None:
+) -> None:
     """把实时事件库 handler 挂到 root logger 上。
 
     任何失败都只降级 —— 数据库绝不能把采集主流程带崩。
     """
     # 显式传空串表示关闭实时入库。
     if db_path == "":
-        return None
+        return
 
     target = db_path or event_store.DEFAULT_DB_PATH
 
@@ -65,7 +65,7 @@ def _attach_event_store(
         logging.getLogger(__name__).warning(
             "Event store disabled, file logging unaffected: %s", exc
         )
-        return None
+        return
 
     logging.getLogger().addHandler(handler)
     atexit.register(handler.close)
@@ -74,7 +74,6 @@ def _attach_event_store(
         os.path.abspath(target),
         log_file_suffix,
     )
-    return handler
 
 
 def setup_app_logging(
@@ -108,15 +107,12 @@ def setup_app_logging(
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
 
-    if enable_room_prefix:
-        formatter = logging.Formatter(
-            "%(asctime)s - [%(name)s] - %(levelname)s - %(message)s"
+    name_field = "[%(name)s]" if enable_room_prefix else "%(name)s"
+    console_handler.setFormatter(
+        logging.Formatter(
+            f"%(asctime)s - {name_field} - %(levelname)s - %(message)s"
         )
-    else:
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-    console_handler.setFormatter(formatter)
+    )
 
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)

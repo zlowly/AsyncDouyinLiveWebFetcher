@@ -38,13 +38,6 @@ def _dump_debug(message, room_id=""):
 
 
 class DouyinChatWebSocketClient:
-    _ws_session: aiohttp.ClientWebSocketResponse
-    _tasks: list[asyncio.Task]
-    _room_id: str
-    _last_message_time: float
-    _stop_event: asyncio.Event | None
-    _closed_event: asyncio.Event
-
     def __init__(
         self,
         room_id: str,

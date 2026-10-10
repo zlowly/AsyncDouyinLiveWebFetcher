@@ -120,27 +120,25 @@ def main() -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    if args.room:
-        log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logging_config.setup_app_logging(log_suffix, room_id=args.room)
-        logger.info("Application started in direct mode.")
-        try:
+    log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    try:
+        if args.room:
+            logging_config.setup_app_logging(log_suffix, room_id=args.room)
+            logger.info("Application started in direct mode.")
             asyncio.run(single_room_task(args.room, shutdown_event))
-        except KeyboardInterrupt:
-            pass
-    else:
-        log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logging_config.setup_app_logging(log_suffix, enable_room_prefix=True)
-        logger.info("Running in watch mode...")
-        whitelist = load_whitelist()
-        contexts = {
-            web_rid: RoomContext(web_rid=web_rid)
-            for web_rid in whitelist.values()
-        }
-        try:
+        else:
+            logging_config.setup_app_logging(
+                log_suffix, enable_room_prefix=True
+            )
+            logger.info("Running in watch mode...")
+            whitelist = load_whitelist()
+            contexts = {
+                web_rid: RoomContext(web_rid=web_rid)
+                for web_rid in whitelist.values()
+            }
             asyncio.run(run_watch_mode(whitelist, contexts))
-        except KeyboardInterrupt:
-            pass
+    except KeyboardInterrupt:
+        pass
 
     ui.info("[MAIN] 程序退出")
     sys.exit(0)

@@ -18,10 +18,6 @@ class InvalidWebridError(ValueError):
 
 
 class DoyinLiveRoom:
-    web_rid: str
-    room_id: str
-    headers: dict = {"User-Agent": CONSTANTS.USER_AGENT}
-
     def __init__(
         self,
         web_rid: str,
@@ -31,6 +27,8 @@ class DoyinLiveRoom:
         stop_event: asyncio.Event | None = None,
     ):
         self.web_rid = web_rid
+        self.headers = {"User-Agent": CONSTANTS.USER_AGENT}
+        # room_id 没有默认值，必须由 new() 解析页面后写入才能用。
         self._session = session
         # 仅当实例自建 session 时才负责关闭它；外部注入的 session 由
         # 调用方管理生命周期。
@@ -99,22 +97,6 @@ class DoyinLiveRoom:
             if owns_session:
                 await session.close()
             raise
-
-    async def get_info(self):
-        target = CONSTANTS.get_status_url(
-            web_rid=self.web_rid, room_id=self.room_id
-        )
-        async with self._session.get(target, headers=self.headers) as response:
-            if response.status != 200:
-                raise aiohttp.ClientConnectionError(
-                    "Failed to fetch the room status."
-                )
-            return await response.json()
-
-    async def get_is_alive(self) -> bool:
-        return (await self.get_info()).get("data", {}).get(
-            "room_status", 2
-        ) == 0
 
     async def create_websocket(self):
         target = CONSTANTS.get_websocket_url(self.room_id)

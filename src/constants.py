@@ -1,6 +1,5 @@
 from functools import lru_cache
 from time import time
-from urllib.parse import urlencode
 
 from yarl import URL
 
@@ -17,37 +16,6 @@ class CONSTANTS:
     WS_BASE = "wss://webcast100-ws-web-lq.douyin.com/"
     # 访问 live.douyin.com 前种下的会话 cookie，失效会导致房间页面拉取失败。
     AC_NONCE = "0123407cc00a9e438deb4"
-
-    @staticmethod
-    @lru_cache(maxsize=10)
-    def get_status_url(web_rid: str, room_id: str) -> str:
-        path = URL(CONSTANTS.BASE) / "webcast/room/web/enter/"
-        query = urlencode(
-            {
-                "aid": 6383,
-                "app_name": "douyin_web",
-                "live_id": 1,
-                "device_platform": "web",
-                "language": "zh-CN",
-                "enter_from": "web_live",
-                "cookie_enabled": "true",
-                "screen_width": 1920,
-                "screen_height": 1080,
-                "browser_language": "zh-CN",
-                "browser_platform": "Win32",
-                "browser_name": CONSTANTS.BROWSER_NAME,
-                "browser_version": CONSTANTS.BROWSER_VERSION,
-                "web_rid": web_rid,
-                "room_id_str": room_id,
-                "enter_source": "",
-                "is_need_double_stream": "false",
-                "insert_task_id": "",
-                "live_reason": "",
-                "msToken": "",
-                "a_bogus": "",
-            }
-        )
-        return str(path.update_query(query))
 
     @staticmethod
     @lru_cache(maxsize=10)
