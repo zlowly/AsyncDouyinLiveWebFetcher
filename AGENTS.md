@@ -42,7 +42,8 @@ main.py (CLI/信号/任务编排)
 
 - `DoyinLiveRoom` is spelled "Doyin" (not "Douyin") in code — search accordingly.
 - Support modules: `config.py` (读取 `config.json`，白名单 + 日志存放形式), `whitelist.py` (白名单匹配), `ntfy.py` (SSE 监听，含 `NTFY_URL`), `ui.py` (Rich 控制台输出，`print` 全部走这里), `logging_config.py` (app/room/stat 日志), `constants.py`, `utils.py` (签名 + `wait_first`).
-- Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入).
+- `SqliteEventStore`（`store.py`）已拆表：10 张 `ev_*` 分表（按 method 路由）+ `chat_fts`（trigram 全文）+ `ip_cache`，单表 `events` 已废弃（见 PLAN-sqlite-split.md）；`payload_of(table, event_id)` 取原始 payload。
+- Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入), `migrate_split_events.py` (events → ev_* 一次性迁移，幂等前置检查 + 逐表对账), `ip_cache.py` (ip_cache 表 CLI：import-csv/pending/user/status).
 
 ## Key quirks
 

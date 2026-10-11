@@ -4,6 +4,7 @@ import logging
 import signal
 import sys
 import time
+from dataclasses import replace
 from datetime import datetime
 
 import logging_config
@@ -20,6 +21,26 @@ shutdown_event = asyncio.Event()
 start_time = time.time()
 shutdown_count = 0
 logger = logging.getLogger(__name__)
+
+VALID_SINKS = ("file", "sqlite")
+
+
+def parse_sinks_arg(raw: str) -> tuple[str, ...]:
+    """解析 --sinks 的逗号分隔值，非法项/空元组时报错退出。"""
+    sinks = []
+    for item in raw.split(","):
+        name = item.strip().lower()
+        if not name:
+            continue
+        if name not in VALID_SINKS:
+            raise argparse.ArgumentTypeError(
+                f"未知存储方式 {name!r}（可选：{', '.join(VALID_SINKS)}）"
+            )
+        if name not in sinks:
+            sinks.append(name)
+    if not sinks:
+        raise argparse.ArgumentTypeError("--sinks 至少要指定一种存储方式")
+    return tuple(sinks)
 
 
 def handle_signal(signum, frame):
@@ -115,6 +136,13 @@ def main() -> None:
         required=False,
         help="指定直播间的房间ID（不指定则启用监控模式）",
     )
+    parser.add_argument(
+        "--sinks",
+        type=parse_sinks_arg,
+        default=None,
+        help="覆盖 config.json 的 logging.sinks，逗号分隔的日志存储方式"
+        f"（可选：{', '.join(VALID_SINKS)}；不指定则按 config.json）",
+    )
     args = parser.parse_args()
 
     signal.signal(signal.SIGINT, handle_signal)
@@ -122,6 +150,8 @@ def main() -> None:
 
     app_config = load_config()
     log_cfg = app_config.logging
+    if args.sinks is not None:
+        log_cfg = replace(log_cfg, sinks=args.sinks)
 
     log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     # sinks 缺省两种都存，watch 与单房间模式一致：日志文件和 sqlite 都写。
@@ -139,7 +169,13 @@ def main() -> None:
                 write_file=log_cfg.file_enabled,
             )
             logger.info("Application started in direct mode.")
-            asyncio.run(single_room_task(args.room, shutdown_event))
+            asyncio.run(
+                single_room_task(
+                    args.room,
+                    shutdown_event,
+                    auth_cookie=app_config.auth.cookie,
+                )
+            )
         else:
             logging_config.setup_app_logging(
                 log_suffix,
@@ -155,6 +191,7 @@ def main() -> None:
                     web_rid=web_rid,
                     log_dir=log_cfg.log_dir,
                     write_log_file=log_cfg.file_enabled,
+                    auth_cookie=app_config.auth.cookie,
                 )
                 for web_rid in whitelist.values()
             }

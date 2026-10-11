@@ -1,0 +1,5 @@
+{
+  "auth": {
+    "cookie": "sessionid=REPLACE_ME; sid_guard=REPLACE_ME; ttwid=REPLACE_ME"
+  }
+}

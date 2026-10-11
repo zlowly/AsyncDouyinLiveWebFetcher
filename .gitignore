@@ -15,6 +15,9 @@ data/
 *.wal
 *.tmp/
 
+# 本地登录凭据（模板见 config.local.json.example）
+config.local.json
+
 # 第三方工具输出
 graphify-out/
 .opencode/

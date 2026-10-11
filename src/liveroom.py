@@ -17,6 +17,20 @@ class InvalidWebridError(ValueError):
     pass
 
 
+def _parse_cookie_header(raw: str) -> dict[str, str]:
+    """把浏览器复制的整串 Cookie 头解析成 name -> value 映射。
+
+    值里可能含 '='（如 base64），只按第一个 '=' 切分；跳过无 '=' 的碎段。
+    """
+    parsed: dict[str, str] = {}
+    for pair in raw.split(";"):
+        name, sep, value = pair.partition("=")
+        name = name.strip()
+        if sep and name:
+            parsed[name] = value.strip()
+    return parsed
+
+
 class DoyinLiveRoom:
     def __init__(
         self,
@@ -51,6 +65,7 @@ class DoyinLiveRoom:
         session: aiohttp.ClientSession | None = None,
         stat_logger: logging.Logger | None = None,
         stop_event: asyncio.Event | None = None,
+        auth_cookie: str = "",
     ):
         owns_session = session is None
         if session is None:
@@ -73,8 +88,12 @@ class DoyinLiveRoom:
                     raise aiohttp.ClientConnectionError(
                         "Failed to connect to Douyin Live."
                     )
+            # 先种游客 __ac_nonce 兜底，再用登录 Cookie 覆盖同名项。
+            cookies = {"__ac_nonce": CONSTANTS.AC_NONCE}
+            if auth_cookie:
+                cookies.update(_parse_cookie_header(auth_cookie))
             instance._session.cookie_jar.update_cookies(
-                cookies={"__ac_nonce": CONSTANTS.AC_NONCE},
+                cookies=cookies,
                 response_url=URL(CONSTANTS.BASE),
             )
             async with instance._session.get(

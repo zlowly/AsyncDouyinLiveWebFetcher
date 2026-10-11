@@ -11,12 +11,20 @@ config.json 取代了原先只有白名单的 config/whitelist.json，除白名�
 watch 与单房间模式的日志去处完全一致，都是 sinks 说了算。弹幕行的
 room_id 由 websocket._dump_debug 的 extra 字段带入（见 store.py 的
 room_id_from_record），所以 watch 模式下多个房间的弹幕能各自归属。
+
+另有本地私密文件 config.local.json（已 gitignore，不入库）可提供登录
+Cookie，使采集端以登录态工作（游客收不到礼物推送）：
+
+    auth.cookie   浏览器复制的完整 Cookie 头，如 "sessionid=...; ..."
+
+该文件缺失或解析失败时静默退回游客模式，不打警告（缺省即游客属正常）。
+模板见 config.local.json.example。
 """
 
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.json")
@@ -48,11 +56,19 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class AuthConfig:
+    """登录凭据（来自 config.local.json，缺失 = 游客模式）。"""
+
+    cookie: str = ""
+
+
+@dataclass(frozen=True)
 class AppConfig:
-    """config.json 的整体视图。"""
+    """config.json + config.local.json 的整体视图。"""
 
     whitelist: dict[str, str]
     logging: LoggingConfig
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
 
 def _resolve_path(raw: object, default: str) -> str:
@@ -123,8 +139,43 @@ def parse_whitelist(raw: object) -> dict[str, str]:
     return whitelist
 
 
+def _parse_auth(raw: object) -> AuthConfig:
+    """解析 config.local.json 的 auth 段；字段缺失/非法按游客处理。"""
+    if not isinstance(raw, dict):
+        if raw is not None:
+            logger.warning("auth 应为对象，已按游客模式处理：%r", raw)
+        return AuthConfig()
+    cookie = raw.get("cookie")
+    if isinstance(cookie, str) and cookie.strip():
+        return AuthConfig(cookie=cookie.strip())
+    if cookie is not None:
+        logger.warning("auth.cookie 应为非空字符串，已按游客模式处理")
+    return AuthConfig()
+
+
+def _load_local_auth(config_path: str) -> AuthConfig:
+    """读取与 config_path 同目录的 config.local.json 的登录凭据。
+
+    任何失败都静默退回游客模式——这是本地私密文件，缺省本就不存在，
+    不打 warning 以免刷屏。
+    """
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(config_path)), "config.local.json"
+    )
+    if not os.path.exists(path):
+        return AuthConfig()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return AuthConfig()
+    if not isinstance(data, dict):
+        return AuthConfig()
+    return _parse_auth(data.get("auth"))
+
+
 def load_config(path: str = CONFIG_PATH) -> AppConfig:
-    """读取 config.json；文件缺失或解析失败时返回全缺省配置。"""
+    """读取 config.json 与 config.local.json；缺失或解析失败用缺省。"""
     data: object = {}
     if os.path.exists(path):
         try:
@@ -138,9 +189,12 @@ def load_config(path: str = CONFIG_PATH) -> AppConfig:
 
     if not isinstance(data, dict):
         logger.warning("配置根节点应为对象，使用缺省配置：%r", data)
-        return AppConfig(whitelist={}, logging=LoggingConfig())
+        return AppConfig(
+            whitelist={}, logging=LoggingConfig(), auth=_load_local_auth(path)
+        )
 
     return AppConfig(
         whitelist=parse_whitelist(data.get("whitelist")),
         logging=parse_logging(data.get("logging")),
+        auth=_load_local_auth(path),
     )

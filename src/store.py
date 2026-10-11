@@ -8,7 +8,8 @@
 
 公共入口 extract_payload() 供实时 handler 与离线导入共用，避免两边逻辑漂移。
 
-设计依据见 plan：/home/zsy/.opencode/plan/douyin-log-sqlite.md
+设计依据见 PLAN-sqlite-split.md（10 张 ev_* 分表 + chat_fts 的实施计划）
+与 /home/zsy/.opencode/plan/sqlite-split-tables.md（v2 审阅稿，决策来源）。
 """
 
 import json
@@ -128,13 +129,6 @@ def parse_timestamp(text):
     return None
 
 
-def _level_name(record):
-    """兼容 logging.LogRecord 与离线导入用的普通 dict。"""
-    if isinstance(record, dict):
-        return record.get("level") or record.get("levelname") or "DEBUG"
-    return getattr(record, "levelname", "DEBUG")
-
-
 def _record_field(record, key, default=None):
     """兼容 logging.LogRecord 与离线导入用的普通 dict。"""
     if isinstance(record, dict):
@@ -235,12 +229,19 @@ def _project_control(payload, row):
     row["status"] = _int(payload.get("status"))
 
 
+def _project_gift(payload, row):
+    """Gift 拆独立表后投影 gift 名与连击数（键是 camelCase）。"""
+    row["gift_name"] = _dig(payload, "gift", "name")
+    row["gift_count"] = _int(payload.get("comboCount"))
+
+
 # method -> 该 method 独有的投影字段。公共字段（用户、等级）无条件抽取。
 _METHOD_PROJECTORS = {
     "WebcastLikeMessage": _project_like,
     "WebcastChatMessage": _project_chat,
     "WebcastEmojiChatMessage": _project_emoji,
     "WebcastMemberMessage": _project_member,
+    "WebcastGiftMessage": _project_gift,
     "WebcastSocialMessage": _project_social,
     "WebcastRoomUserSeqMessage": _project_rank,
     "WebcastRoomRankMessage": _project_rank,
@@ -250,7 +251,7 @@ _METHOD_PROJECTORS = {
     "WebcastControlMessage": _project_control,
 }
 
-# 剩余列统一置 NULL，保证 row 的 key 集合与 _COLUMNS 对齐。
+# 全部专属列的并集，剩余列统一置 NULL 保证 row 的 key 集合对齐插入列。
 _NULL_COLUMNS = (
     "content",
     "like_count",
@@ -261,11 +262,13 @@ _NULL_COLUMNS = (
     "follow_count",
     "status",
     "ranks",
+    "gift_name",
+    "gift_count",
 )
 
 
 def project(payload):
-    """把 protobuf payload 投影成 events 表的一行。
+    """把 protobuf payload 投影成一行（公共列 + 该 method 的专属列）。
 
     实测投影后只保留原始字节的 2.9%（34 倍缩减），原始 payload
     仍以压缩 BLOB 存储，长尾字段随时可还原。
@@ -288,6 +291,9 @@ def project(payload):
             "create_time": _int(common.get("createTime")),
             "user_id": user.get("id"),
             "user_name": user.get("nickName"),
+            "short_id": user.get("shortId"),
+            "display_id": user.get("displayId"),
+            "sec_uid": user.get("secUid"),
             "gender": _int(user.get("gender")),
             "pay_level": _int(_dig(user, "payGrade", "level")),
             "fans_level": _int(_dig(user, "fansClub", "data", "level")),
@@ -300,12 +306,11 @@ def project(payload):
     return row
 
 
-SCHEMA = """
--- events：一条 DEBUG protobuf 消息 = 一行。
--- 投影列只保留常用字段（实测占原始字节 2.9%），完整原文在 payload 列。
--- 本表的注释会原样存进 sqlite_master.sql，用 .schema events 可见。
-CREATE TABLE IF NOT EXISTS events (
-    -- ===== 时间与归属 =====
+# ---- DDL：10 张互斥分区表 + 账本表 -----------------------------------
+# 公共列 16 根（不含 id）。DDL 拆成语句元组（TABLES_DDL），store 自身
+# 逐句建库，migrate_split_events.py 迁移时也逐句 execute —— 不能用
+# executescript，它会隐式 COMMIT 破坏迁移大事务。
+_COMMON_DDL = """    -- ===== 时间与归属 =====
     -- 自增主键；同时是 chat_fts.content_rowid（external content 约定）
     id            INTEGER PRIMARY KEY,
     -- 日志时间戳 'YYYY-MM-DD HH:MM:SS,mmm'，本地时区，仅用于展示
@@ -317,129 +322,167 @@ CREATE TABLE IF NOT EXISTS events (
     room_id       TEXT NOT NULL DEFAULT '',
     -- 日志后缀：logs/app-<session>.log。与 msg_id 组成唯一键做幂等
     session       TEXT NOT NULL DEFAULT '',
-
     -- ===== 消息标识 =====
-    -- WebcastXxxMessage。决定下面"业务字段"一节哪些列有值
+    -- WebcastXxxMessage。决定专属列哪些有值
     method        TEXT    NOT NULL,
-    -- common.msgId，抖音侧全局消息 ID；与 session 组成唯一键去重
+    -- common.msgId，与 session 组成唯一键去重（OR IGNORE 幂等）
     msg_id        TEXT,
     -- common.createTime（毫秒）。与 ts_epoch 实测差约 65 秒，
     -- 跨源对齐与精确时序分析一律以 ts_epoch 为准
     create_time   INTEGER,
-    -- 日志等级。目前恒为 DEBUG（INFO 行不是 protobuf dump，已过滤）
-    level         TEXT NOT NULL DEFAULT 'DEBUG',
-    -- 完整 payload JSON，zlib level 1 压缩。投影列没覆盖的长尾字段
-    -- 用 store.SqliteEventStore.payload_of(id) 还原
+    -- 完整 payload JSON，zlib level 1 压缩。长尾字段用
+    -- store.SqliteEventStore.payload_of(table, id) 还原
     payload       BLOB    NOT NULL,
-
     -- ===== 用户画像 =====
-    -- user.id
-    user_id       TEXT,
-    -- user.nickName。观众画像通常 group by 这列
-    user_name     TEXT,
-    -- user.gender：0 保密 / 1 男 / 2 女（映射见 websocket.py）
-    gender        INTEGER,
-    -- user.payGrade.level 付费等级。**源数据是字符串**，已转 int
-    pay_level     INTEGER,
-    -- user.fansClub.data.level 粉丝团等级。源数据本身是 int
-    fans_level    INTEGER,
+    user_id       TEXT,               -- user.id
+    user_name     TEXT,               -- user.nickName
+    short_id      TEXT,               -- user.shortId
+    display_id    TEXT,               -- user.displayId 抖音号
+    sec_uid       TEXT,               -- user.secUid，IP 属地抓取管线的键
+    gender        INTEGER,            -- 0 保密 / 1 男 / 2 女
+    pay_level     INTEGER,            -- user.payGrade.level（字符串已转 int）
+    fans_level    INTEGER             -- user.fansClub.data.level
+"""
 
-    -- ===== 业务字段，含义随 method 变 =====
-    -- ChatMessage.content 弹幕正文；EmojiChatMessage.defaultContent
-    -- 表情文案；Fansclub/RoomMessage 的公告正文
-    content       TEXT,
-    -- LikeMessage.count：本条消息带来的点赞数（增量）
-    like_count    INTEGER,
-    -- Like.total 累计赞 / RoomUserSeq.total 在线人数 /
-    -- RoomStats.total 累计观看。**同一列三种含义，先看 method**
-    total         INTEGER,
-    -- RoomUserSeqMessage.totalUser 累计观众（区别于 total 的在线）
-    total_user    INTEGER,
-    -- MemberMessage.memberCount：进场时的当前成员数
-    member_count  INTEGER,
-    -- 状态码，含义随 method 变：Member.action 进场动作、
-    -- Social.action 关注/分享类型、Fansclub.type、Room.type
-    action        TEXT,
-    -- SocialMessage.followCount 关注数
-    follow_count  INTEGER,
-    -- ControlMessage.status：3 = 直播结束（会触发优雅关闭）
-    status        INTEGER,
-    -- JSON [[名次, user_id, 昵称], ...]，恒 3 条。RoomUserSeq 条目
-    -- 自带 rank；RoomRank 靠数组下标(1起)推，见 store._ranks()。
-    -- 查询用 json_each + json_extract 展开
-    ranks         TEXT
-);
+_TABLE_EXTRA_DDL = {
+    # 弹幕正文 / 表情文案
+    "ev_chat": "    content       TEXT",
+    # 本条增量 / 累计赞
+    "ev_like": ("    like_count    INTEGER,\n    total         INTEGER"),
+    # 进场成员数 / 进场动作码
+    "ev_member": ("    member_count  INTEGER,\n    action        TEXT"),
+    # gift.name / comboCount
+    "ev_gift": ("    gift_name     TEXT,\n    gift_count    INTEGER"),
+    # 关注/分享类型 / 关注数
+    "ev_social": ("    action        TEXT,\n    follow_count  INTEGER"),
+    # 在线人数 / 累计观众 / JSON [[名次, user_id, 昵称], ...]
+    "ev_rank": (
+        "    total         INTEGER,\n"
+        "    total_user    INTEGER,\n"
+        "    ranks         TEXT"
+    ),
+    # 累计观看
+    "ev_stats": "    total         INTEGER",
+    # 公告正文 / Fansclub.type 等
+    "ev_notice": ("    content       TEXT,\n    action        TEXT"),
+    # 3 = 直播结束
+    "ev_control": "    status        INTEGER",
+    # StreamAdaptation / 未知 method 兜底
+    "ev_other": "",
+}
 
--- 幂等：同一 session 内 msg_id 重复时 INSERT OR IGNORE 跳过。
-CREATE UNIQUE INDEX IF NOT EXISTS ux_events_session_msg
-    ON events(session, msg_id);
+_TABLES = tuple(_TABLE_EXTRA_DDL)  # 顺序即建表顺序
 
--- 时间范围扫描（跨年查询的主路径）
-CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts_epoch);
--- 按房间看某段时间
-CREATE INDEX IF NOT EXISTS idx_events_room    ON events(room_id, ts_epoch);
--- 按消息类型过滤时间范围
-CREATE INDEX IF NOT EXISTS idx_events_method  ON events(method, ts_epoch);
--- 观众画像：某用户全部记录 / 按昵称聚合
-CREATE INDEX IF NOT EXISTS idx_events_user    ON events(user_id);
-CREATE INDEX IF NOT EXISTS idx_events_name    ON events(user_name);
+# 大中表带 room/user/name 二级索引；小表 social/notice/control 只留
+# 时间索引；ev_stats 只多一个 room。
+_INDEX_FLAGS = {
+    "ev_chat": "room,user,name",
+    "ev_like": "room,user,name",
+    "ev_member": "room,user,name",
+    "ev_gift": "room,user,name",
+    "ev_social": "",
+    "ev_rank": "room,user,name",
+    "ev_stats": "room",
+    "ev_notice": "",
+    "ev_control": "",
+    "ev_other": "room,user,name",
+}
 
--- chat_fts：events 的 external content 全文索引 —— 正文只存 events
--- 一份，chat_fts 只存倒排索引，靠下面三个触发器同步。
--- trigram 分词器要求 >= 3 字符，**2 字 CJK 检索不到**，需 LIKE 兜底。
-CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(
-    content,      -- 弹幕/公告正文，来自 events.content
-    user_name,    -- 用户昵称，来自 events.user_name
-    content='events',
-    content_rowid='id',
-    tokenize='trigram'
-);
 
--- 同步触发器。external content 的 delete 命令必须带上旧值，否则索引
--- 损坏；update 必须先删后插，否则旧词条会残留成幽灵命中。
-CREATE TRIGGER IF NOT EXISTS events_ai AFTER INSERT ON events BEGIN
-    INSERT INTO chat_fts(rowid, content, user_name)
-    VALUES (new.id, new.content, new.user_name);
-END;
-
-CREATE TRIGGER IF NOT EXISTS events_ad AFTER DELETE ON events BEGIN
-    INSERT INTO chat_fts(chat_fts, rowid, content, user_name)
-    VALUES ('delete', old.id, old.content, old.user_name);
-END;
-
-CREATE TRIGGER IF NOT EXISTS events_au AFTER UPDATE ON events BEGIN
-    INSERT INTO chat_fts(chat_fts, rowid, content, user_name)
-    VALUES ('delete', old.id, old.content, old.user_name);
-    INSERT INTO chat_fts(rowid, content, user_name)
-    VALUES (new.id, new.content, new.user_name);
-END;
-
--- imported_sessions：导入进度账本，跑 import_logs.py 时先查这表，
--- 命中就整文件跳过，所以重复执行不会导致行数增长。
-CREATE TABLE IF NOT EXISTS imported_sessions (
-    session     TEXT PRIMARY KEY,   -- 日志后缀，与 events.session 同义
+def _build_tables_ddl():
+    stmts = []
+    for table in _TABLES:
+        extra = _TABLE_EXTRA_DDL[table]
+        body = _COMMON_DDL + (f",\n{extra}\n" if extra else "\n")
+        stmts.append(f"CREATE TABLE IF NOT EXISTS {table} (\n{body});")
+        stmts.append(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{table[3:]}_session_msg"
+            f" ON {table}(session, msg_id);"
+        )
+        stmts.append(
+            f"CREATE INDEX IF NOT EXISTS idx_{table[3:]}_ts"
+            f" ON {table}(ts_epoch);"
+        )
+        for flag in _INDEX_FLAGS[table].split(","):
+            if not flag:
+                continue
+            col = {"room": "room_id", "user": "user_id", "name": "user_name"}[
+                flag
+            ]
+            stmts.append(
+                f"CREATE INDEX IF NOT EXISTS idx_{table[3:]}_{flag}"
+                f" ON {table}({col}{', ts_epoch' if flag == 'room' else ''});"
+            )
+    # imported_sessions：导入进度账本，跑 import_logs.py 时先查这表，
+    # 命中就整文件跳过，所以重复执行不会导致行数增长。
+    stmts.append("""CREATE TABLE IF NOT EXISTS imported_sessions (
+    session     TEXT PRIMARY KEY,   -- 日志后缀，与各 ev_* 表 session 同义
     room_id     TEXT,               -- 当时推断出的房间号（可能为空串）
     source      TEXT,               -- 导入时的原始文件路径
-    rows        INTEGER NOT NULL DEFAULT 0,  -- 实际写入 events 的行数
+    rows        INTEGER NOT NULL DEFAULT 0,  -- 实际写入事件表的行数
     imported_at TEXT NOT NULL       -- 导入完成时刻 'YYYY-MM-DD HH:MM:SS'
-);
-"""
+);""")
+    # ip_cache：sec_uid -> IP 属地抓取结果（取代 ~/tracking.db 同名表）
+    stmts.append("""CREATE TABLE IF NOT EXISTS ip_cache (
+    sec_uid       TEXT PRIMARY KEY,
+    ip_location   TEXT,
+    age           INTEGER,
+    ip_status     TEXT,             -- fetch_ip_location.py 的 status
+    ip_fetched_at TEXT              -- 'YYYY-MM-DD HH:MM:SS'
+);""")
+    return tuple(stmts)
 
-_INSERT_SQL = """
-INSERT OR IGNORE INTO events (
-    ts, ts_epoch, room_id, session, method, msg_id, create_time,
-    level, payload, user_id, user_name, gender, pay_level, fans_level,
-    content, like_count, total, total_user, member_count, action,
-    follow_count, status, ranks
-) VALUES (
-    ?, ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?,
-    ?, ?, ?
+
+# chat_fts：ev_chat 的 external content 全文索引 —— 正文只存 ev_chat
+# 一份，chat_fts 只存倒排索引，靠三个触发器同步。
+# trigram 分词器要求 >= 3 字符，**2 字 CJK 检索不到**，需 LIKE 兜底。
+# 触发器带 IF NOT EXISTS（SQLite >= 3.31 支持），保证 store 每次打开
+# 库重复执行 executescript 不报错。
+FTS_DDL = (
+    """CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(
+    content,      -- 弹幕正文，来自 ev_chat.content
+    user_name,    -- 用户昵称，来自 ev_chat.user_name
+    content='ev_chat',
+    content_rowid='id',
+    tokenize='trigram'
+);""",
+    """CREATE TRIGGER IF NOT EXISTS ev_chat_ai AFTER INSERT ON ev_chat BEGIN
+    INSERT INTO chat_fts(rowid, content, user_name)
+    VALUES (new.id, new.content, new.user_name);
+END;""",
+    """CREATE TRIGGER IF NOT EXISTS ev_chat_ad AFTER DELETE ON ev_chat BEGIN
+    INSERT INTO chat_fts(chat_fts, rowid, content, user_name)
+    VALUES ('delete', old.id, old.content, old.user_name);
+END;""",
+    """CREATE TRIGGER IF NOT EXISTS ev_chat_au AFTER UPDATE ON ev_chat BEGIN
+    INSERT INTO chat_fts(chat_fts, rowid, content, user_name)
+    VALUES ('delete', old.id, old.content, old.user_name);
+    INSERT INTO chat_fts(rowid, content, user_name)
+    VALUES (new.id, new.content, new.user_name);
+END;""",
 )
-"""
+TABLES_DDL = _build_tables_ddl()
+SCHEMA = "\n".join(TABLES_DDL + FTS_DDL)  # 仅供 store 自身建库用
 
-_COLUMNS = (
+# ---- method -> 表路由 -------------------------------------------------
+_METHOD_TABLES = {
+    "WebcastChatMessage": "ev_chat",
+    "WebcastEmojiChatMessage": "ev_chat",
+    "WebcastLikeMessage": "ev_like",
+    "WebcastMemberMessage": "ev_member",
+    "WebcastGiftMessage": "ev_gift",
+    "WebcastSocialMessage": "ev_social",
+    "WebcastRoomUserSeqMessage": "ev_rank",
+    "WebcastRoomRankMessage": "ev_rank",
+    "WebcastRoomStatsMessage": "ev_stats",
+    "WebcastFansclubMessage": "ev_notice",
+    "WebcastRoomMessage": "ev_notice",
+    "WebcastControlMessage": "ev_control",
+    # WebcastRoomStreamAdaptationMessage 与未知 method -> ev_other（兜底）
+}
+
+# 公共插入列（顺序与 _COMMON_DDL 一致；id 自增，不进插入列）
+_COMMON_INSERT_COLS = (
     "ts",
     "ts_epoch",
     "room_id",
@@ -447,23 +490,41 @@ _COLUMNS = (
     "method",
     "msg_id",
     "create_time",
-    "level",
     "payload",
     "user_id",
     "user_name",
+    "short_id",
+    "display_id",
+    "sec_uid",
     "gender",
     "pay_level",
     "fans_level",
-    "content",
-    "like_count",
-    "total",
-    "total_user",
-    "member_count",
-    "action",
-    "follow_count",
-    "status",
-    "ranks",
 )
+_TABLE_EXTRA_COLS = {
+    "ev_chat": ("content",),
+    "ev_like": ("like_count", "total"),
+    "ev_member": ("member_count", "action"),
+    "ev_gift": ("gift_name", "gift_count"),
+    "ev_social": ("action", "follow_count"),
+    "ev_rank": ("total", "total_user", "ranks"),
+    "ev_stats": ("total",),
+    "ev_notice": ("content", "action"),
+    "ev_control": ("status",),
+    "ev_other": (),
+}
+# 每表一条 INSERT OR IGNORE，语句按表缓存
+_INSERT_SQL = {
+    t: (
+        f"INSERT OR IGNORE INTO {t} ("
+        + ", ".join(_COMMON_INSERT_COLS + _TABLE_EXTRA_COLS[t])
+        + ") VALUES ("
+        + ", ".join(
+            "?" * (len(_COMMON_INSERT_COLS) + len(_TABLE_EXTRA_COLS[t]))
+        )
+        + ")"
+    )
+    for t in _TABLES
+}
 
 
 class SqliteEventStore:
@@ -495,8 +556,8 @@ class SqliteEventStore:
     # ---- 写入 ---------------------------------------------------
 
     @staticmethod
-    def _to_row(record, room_id, session, level):
-        """日志记录 -> events 表参数元组；非 payload 行返回 None。"""
+    def _to_row(record, room_id, session):
+        """日志记录 -> (目标表, 参数元组)；非 payload 行返回 None。"""
         payload = extract_payload(record)
         if payload is None:
             return None
@@ -505,6 +566,7 @@ class SqliteEventStore:
         method = projection.pop("method")
         if not method:
             return None
+        table = _METHOD_TABLES.get(method, "ev_other")
 
         ts = record_timestamp(record)
         epoch = parse_timestamp(ts)
@@ -517,13 +579,13 @@ class SqliteEventStore:
             "room_id": room_id or "",
             "session": session or "",
             "method": method,
-            "level": level,
             "payload": zlib.compress(
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"), 1
             ),
         }
         row.update(projection)
-        return tuple(row[col] for col in _COLUMNS)
+        cols = _COMMON_INSERT_COLS + _TABLE_EXTRA_COLS[table]
+        return table, tuple(row[col] for col in cols)
 
     @classmethod
     def build_rows(
@@ -534,31 +596,48 @@ class SqliteEventStore:
         session="",
         room_resolver=None,
     ):
-        """把一批日志记录转成可入库的元组列表，跳过非 payload 行。"""
+        """把一批日志记录转成 (table, values) 扁平列表，跳过非 payload 行。
+
+        扁平结构保留 len() 语义（import_logs.py 直接拿它当读入行数），
+        按表分组留给 insert_rows。
+        """
         rows = []
         for record in records:
             current = room_id
             if room_resolver is not None:
                 current = room_resolver(record, room_id)
-            row = cls._to_row(record, current, session, _level_name(record))
+            row = cls._to_row(record, current, session)
             if row is not None:
                 rows.append(row)
         return rows
 
     def insert_rows(self, rows):
-        """写入一批已构建好的元组，返回**实际**插入行数。
+        """写入一批 (table, values)，返回**实际**插入行数。
 
         必须用 cursor.rowcount 而不是 connection.total_changes ——
         chat_fts 的同步触发器会写入影子表，那部分变更会被
-        total_changes 计入，导致虚高。
+        total_changes 计入，导致虚高。逐表 executemany 后累加。
         """
         if not rows:
             return 0
+        grouped = {}
+        for table, values in rows:
+            grouped.setdefault(table, []).append(values)
         with self._lock:
             cursor = self._conn.cursor()
             try:
-                cursor.executemany(_INSERT_SQL, rows)
-                return cursor.rowcount
+                # isolation_level=None：手写事务保证跨表原子。
+                self._conn.execute("BEGIN")
+                try:
+                    inserted = 0
+                    for table, values in grouped.items():
+                        cursor.executemany(_INSERT_SQL[table], values)
+                        inserted += cursor.rowcount
+                    self._conn.execute("COMMIT")
+                except BaseException:
+                    self._conn.execute("ROLLBACK")
+                    raise
+                return inserted
             finally:
                 cursor.close()
 
@@ -603,18 +682,21 @@ class SqliteEventStore:
 
     # ---- 查询 ---------------------------------------------------
 
-    def count(self, where="", params=()):
-        sql = "SELECT COUNT(*) FROM events"
-        if where:
-            sql += f" WHERE {where}"
+    def count(self):
+        """10 张分表行数总和。"""
         with self._lock:
-            return self._conn.execute(sql, params).fetchone()[0]
+            return sum(
+                self._conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                for t in _TABLES
+            )
 
-    def payload_of(self, event_id):
+    def payload_of(self, table, event_id):
         """还原某行的原始 payload（长尾字段的兜底入口）。"""
+        if table not in _TABLES:
+            raise ValueError(f"未知表名: {table}")
         with self._lock:
             cur = self._conn.execute(
-                "SELECT payload FROM events WHERE id = ?", (event_id,)
+                f"SELECT payload FROM {table} WHERE id = ?", (event_id,)
             )
             blob = cur.fetchone()
         if blob is None:

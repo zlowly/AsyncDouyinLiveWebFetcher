@@ -31,6 +31,8 @@ class RoomContext:
     # 来自 config.json 的 logging 段，统计日志跟着它走。
     log_dir: str = logging_config.DEFAULT_LOG_PATH
     write_log_file: bool = True
+    # 登录 Cookie（config.local.json 的 auth.cookie），空串 = 游客模式。
+    auth_cookie: str = ""
 
     @property
     def app_logger(self) -> logging.Logger:
@@ -130,13 +132,16 @@ async def watch_room_task(ctx: RoomContext, shutdown_event) -> None:
     logger.info(f"Task for room {ctx.web_rid} shutdown complete")
 
 
-async def single_room_task(web_rid: str, shutdown_event) -> None:
+async def single_room_task(
+    web_rid: str, shutdown_event, auth_cookie: str = ""
+) -> None:
     """single 模式：连接房间直到下播或程序关闭。"""
     ui.info(f"[SINGLE-{web_rid[:8]}] single_room_task 启动")
     logger.info(f"Single mode started for room {web_rid}")
     ctx = RoomContext(
         web_rid=web_rid,
         log_suffix=datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        auth_cookie=auth_cookie,
     )
     await run_room_session(ctx, shutdown_event, invalid_giveup=None)
     ui.info(f"[SINGLE-{web_rid[:8]}] single_room_task 关闭完成")
@@ -152,6 +157,7 @@ async def _connect_once(ctx: RoomContext, shutdown_event):
         ctx.web_rid,
         stat_logger=ctx.stat_logger,
         stop_event=ctx.stop_event,
+        auth_cookie=ctx.auth_cookie,
     ) as room:
         ws = await room.create_websocket()
         probe_started = time.monotonic()
