@@ -42,20 +42,23 @@ class JsonFormatter(logging.Formatter):
 def _attach_event_store(
     log_file_suffix: str,
     room_id: str | None,
-    db_path: str | None,
+    db_path: str,
 ) -> None:
     """把实时事件库 handler 挂到 root logger 上。
 
     任何失败都只降级 —— 数据库绝不能把采集主流程带崩。
+
+    db_path 为空串表示关闭实时入库（config.json 的 sinks 不含 sqlite）。
     """
-    # 显式传空串表示关闭实时入库。
-    if db_path == "":
+    if not db_path:
+        logging.getLogger(__name__).info(
+            "Event store disabled: 实时入库已关闭"
+            + ("，请关掉进程后用 import_logs.py 入库" if db_path == "" else "")
+        )
         return
 
-    target = db_path or event_store.DEFAULT_DB_PATH
-
     try:
-        store_obj = event_store.SqliteEventStore(target)
+        store_obj = event_store.SqliteEventStore(db_path)
         handler = event_store.SqliteLogHandler(
             store_obj,
             room_id=room_id or "",
@@ -71,7 +74,7 @@ def _attach_event_store(
     atexit.register(handler.close)
     logging.getLogger(__name__).info(
         "Event store enabled: %s (session=%s)",
-        os.path.abspath(target),
+        os.path.abspath(db_path),
         log_file_suffix,
     )
 
@@ -81,28 +84,24 @@ def setup_app_logging(
     log_file_path: str = DEFAULT_LOG_PATH,
     enable_room_prefix: bool = False,
     room_id: str | None = None,
-    db_path: str | None = None,
+    db_path: str = event_store.DEFAULT_DB_PATH,
+    write_file: bool = True,
 ):
     """
     配置统一的应用日志系统，只设置控制台和主应用日志文件。
     这个函数只应该在应用启动时调用一次。
 
     room_id 提前传入时会先建好该房间的日志目录（单房间模式），
-    供后续 setup_room_logger 写入统计日志。
+    供后续 setup_room_logger 写入统计日志；write_file=False 时不建目录。
 
-    db_path 传空串可关闭实时入库，否则默认写 data/events.db。
+    log_file_path / db_path 来自 config.json 的 logging 段。
+    db_path 传空串可关闭实时入库；write_file=False 时不落日志文件，
+    只保留控制台输出和事件库（sinks 不含 file 时用）。
     """
-    if room_id:
+    if write_file and room_id:
         os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
-
-    full_log_path = os.path.join(log_file_path, f"app-{log_file_suffix}.log")
-    os.makedirs(log_file_path, exist_ok=True)
-
-    file_handler = logging.FileHandler(full_log_path)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(JsonFormatter())
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
@@ -113,32 +112,54 @@ def setup_app_logging(
             f"%(asctime)s - {name_field} - %(levelname)s - %(message)s"
         )
     )
-
-    root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
+
+    if write_file:
+        full_log_path = os.path.join(
+            log_file_path, f"app-{log_file_suffix}.log"
+        )
+        os.makedirs(log_file_path, exist_ok=True)
+
+        file_handler = logging.FileHandler(full_log_path)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(JsonFormatter())
+        root_logger.addHandler(file_handler)
+    else:
+        logging.getLogger(__name__).info(
+            "File logging disabled: 仅输出到控制台"
+        )
+
     _attach_event_store(log_file_suffix, room_id, db_path)
 
     logging.info("App logging system configured successfully.")
 
 
 def setup_room_logger(
-    room_id: str, suffix: str, log_file_path: str = DEFAULT_LOG_PATH
+    room_id: str,
+    suffix: str,
+    log_file_path: str = DEFAULT_LOG_PATH,
+    write_file: bool = True,
 ) -> tuple:
     """
     为指定房间设置独立的统计日志记录器。
     返回 (app_logger, stat_logger) 元组。
-    """
-    os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
 
+    write_file=False（sinks 不含 file）时统计不落盘，挂 NullHandler 兜底，
+    调用方无需分支。
+    """
     app_logger = logging.getLogger(f"room_{room_id}")
     app_logger.setLevel(logging.DEBUG)
 
-    stats_log_path = os.path.join(
-        log_file_path, room_id, f"stats-{suffix}.log"
-    )
-    stat_file_handler = logging.FileHandler(stats_log_path)
-    stat_file_handler.setLevel(logging.INFO)
-    stat_file_handler.setFormatter(JsonFormatter())
+    if not write_file:
+        stat_file_handler = logging.NullHandler()
+    else:
+        os.makedirs(os.path.join(log_file_path, room_id), exist_ok=True)
+        stats_log_path = os.path.join(
+            log_file_path, room_id, f"stats-{suffix}.log"
+        )
+        stat_file_handler = logging.FileHandler(stats_log_path)
+        stat_file_handler.setLevel(logging.INFO)
+        stat_file_handler.setFormatter(JsonFormatter())
 
     stat_logger = logging.getLogger(f"stat_{room_id}")
     stat_logger.setLevel(logging.INFO)

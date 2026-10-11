@@ -34,3 +34,8 @@ logger.addHandler(handler)
 def info(message: str) -> None:
     """向控制台输出一条信息。"""
     logger.info(message)
+
+
+def warn(message: str) -> None:
+    """向控制台输出一条告警（日志系统尚未就绪时也能用）。"""
+    logger.warning(message)

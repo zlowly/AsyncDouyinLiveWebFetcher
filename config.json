@@ -1,0 +1,10 @@
+{
+    "whitelist": {
+        "温缇": "249069870647"
+    },
+    "logging": {
+        "sinks": ["file", "sqlite"],
+        "log_dir": "logs",
+        "db_path": "data/events.db"
+    }
+}

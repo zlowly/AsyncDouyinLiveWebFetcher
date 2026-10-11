@@ -41,13 +41,18 @@ main.py (CLI/信号/任务编排)
 ```
 
 - `DoyinLiveRoom` is spelled "Doyin" (not "Douyin") in code — search accordingly.
-- Support modules: `whitelist.py` (白名单加载/匹配), `ntfy.py` (SSE 监听，含 `NTFY_URL`), `ui.py` (Rich 控制台输出，`print` 全部走这里), `logging_config.py` (app/room/stat 日志), `constants.py`, `utils.py` (签名 + `wait_first`).
+- Support modules: `config.py` (读取 `config.json`，白名单 + 日志存放形式), `whitelist.py` (白名单匹配), `ntfy.py` (SSE 监听，含 `NTFY_URL`), `ui.py` (Rich 控制台输出，`print` 全部走这里), `logging_config.py` (app/room/stat 日志), `constants.py`, `utils.py` (签名 + `wait_first`).
 - Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入).
 
 ## Key quirks
 
 - **Watch mode** requires a local [ntfy.sh](https://ntfy.sh/) server at `http://localhost:10380/mytopic/sse` (defined as `NTFY_URL` in `ntfy.py`). Without it, watch mode won't crash but no room will ever connect — rooms start only when an ntfy SSE message reports a whitelisted streamer is live.
-- **`config/whitelist.json`** maps streamer names → room IDs and drives watch mode. `ntfy.py` parses SSE messages and calls back into `main.py`, which starts/stops one `session.py` task per whitelisted room.
+- **`config.json`**（项目根目录，取代旧的 `config/whitelist.json`）由 `src/config.py` 读取：
+  - `whitelist` — 主播名 → 房间 ID 映射，驱动 watch mode。`ntfy.py` 解析 SSE 消息并回调 `main.py`，后者为每个白名单房间起/停一个 `session.py` 任务。
+  - `logging.sinks` — 日志去处，`"file"`（日志文件）和/或 `"sqlite"`（事件库），**缺省两种都存**；脏值只告警不崩，非法项忽略、全空时回到缺省。
+  - `logging.log_dir` / `logging.db_path` — 缺省 `logs/` 和 `data/events.db`，相对路径按项目根目录解析。
+  - 统计日志（`setup_room_logger`）跟着 `log_dir` 走；`sinks` 不含 `file` 时挂 `NullHandler`，不落盘。
+- **watch 与单房间模式的日志去处完全一致**，都由 `sinks` 决定，缺省都是 log + sqlite 双写。弹幕行的 `room_id` 靠 `websocket._dump_debug` 的 `extra={"room_id": ...}` 归属（`store.room_id_from_record` 先读 extra，再退回 logger 名/正文前缀），所以 watch 模式下多房间交错也能各自归属。`import_logs.py` 退成补录工具，不是必需步骤。
 - **`__ac_nonce` cookie** is defined as `CONSTANTS.AC_NONCE` in `constants.py` — may expire, causing connection failures.
 - **`src/scripts/sign.js`** is obfuscated Douyin `byted_acrawler` signing code executed via `mini-racer` (V8) in `utils.py`. May break when Douyin updates their signature algorithm.
 - **`protobuf/readme.md`** is outdated (references `betterproto==2.0.0b6`; installed is `>=1.2.5`). Regenerate via: `protoc -I . --python_betterproto_out=. douyin.proto` from `src/protobuf/`.

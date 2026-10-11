@@ -28,6 +28,9 @@ class RoomContext:
     log_suffix: str | None = None
     stats_suffix: str | None = None
     stat_logger: logging.Logger | None = None
+    # 来自 config.json 的 logging 段，统计日志跟着它走。
+    log_dir: str = logging_config.DEFAULT_LOG_PATH
+    write_log_file: bool = True
 
     @property
     def app_logger(self) -> logging.Logger:
@@ -38,7 +41,10 @@ class RoomContext:
         if not self.log_suffix or self.log_suffix == self.stats_suffix:
             return
         app_logger, stat_logger = logging_config.setup_room_logger(
-            self.web_rid, self.log_suffix
+            self.web_rid,
+            self.log_suffix,
+            self.log_dir,
+            write_file=self.write_log_file,
         )
         self.stats_suffix = self.log_suffix
         self.stat_logger = stat_logger

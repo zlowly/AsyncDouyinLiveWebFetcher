@@ -8,13 +8,13 @@ from datetime import datetime
 
 import logging_config
 import ui
+from config import load_config
 from ntfy import ntfy_listener
 from session import (
     RoomContext,
     single_room_task,
     watch_room_task,
 )
-from whitelist import load_whitelist
 
 shutdown_event = asyncio.Event()
 start_time = time.time()
@@ -120,20 +120,42 @@ def main() -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    app_config = load_config()
+    log_cfg = app_config.logging
+
     log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # sinks 缺省两种都存，watch 与单房间模式一致：日志文件和 sqlite 都写。
+    # watch 模式下弹幕行的 room_id 由 websocket._dump_debug 的 extra 带入
+    # （store.room_id_from_record 先读 extra），多个房间各自归属，不必等
+    # import_logs.py 事后补。
+    db_path = log_cfg.db_path if log_cfg.sqlite_enabled else ""
     try:
         if args.room:
-            logging_config.setup_app_logging(log_suffix, room_id=args.room)
+            logging_config.setup_app_logging(
+                log_suffix,
+                log_file_path=log_cfg.log_dir,
+                room_id=args.room,
+                db_path=db_path,
+                write_file=log_cfg.file_enabled,
+            )
             logger.info("Application started in direct mode.")
             asyncio.run(single_room_task(args.room, shutdown_event))
         else:
             logging_config.setup_app_logging(
-                log_suffix, enable_room_prefix=True
+                log_suffix,
+                log_file_path=log_cfg.log_dir,
+                enable_room_prefix=True,
+                db_path=db_path,
+                write_file=log_cfg.file_enabled,
             )
             logger.info("Running in watch mode...")
-            whitelist = load_whitelist()
+            whitelist = app_config.whitelist
             contexts = {
-                web_rid: RoomContext(web_rid=web_rid)
+                web_rid: RoomContext(
+                    web_rid=web_rid,
+                    log_dir=log_cfg.log_dir,
+                    write_log_file=log_cfg.file_enabled,
+                )
                 for web_rid in whitelist.values()
             }
             asyncio.run(run_watch_mode(whitelist, contexts))
