@@ -1,5 +1,6 @@
 {
+  "_comment": "从 DevTools -> Network -> 请求头复制整串 Cookie（不要用 document.cookie，会漏掉 HttpOnly 的 sessionid）。缺失则按游客模式运行，收不到礼物推送。",
   "auth": {
-    "cookie": "sessionid=REPLACE_ME; sid_guard=REPLACE_ME; ttwid=REPLACE_ME"
+    "cookie": "sessionid=REPLACE_ME; sessionid_ss=REPLACE_ME; sid_guard=REPLACE_ME; ttwid=REPLACE_ME"
   }
 }

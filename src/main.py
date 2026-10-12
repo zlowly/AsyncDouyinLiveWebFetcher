@@ -153,6 +153,19 @@ def main() -> None:
     if args.sinks is not None:
         log_cfg = replace(log_cfg, sinks=args.sinks)
 
+    # 登录态只影响能否收到礼物推送，开播前就报一次，免得连上了才发现
+    # 走的是游客通道。
+    if app_config.auth.cookie:
+        ui.info(
+            f"[MAIN] 登录模式（config.local.json auth.cookie，"
+            f"{len(app_config.auth.cookie.split(';'))} 项）"
+        )
+    else:
+        ui.info(
+            "[MAIN] 游客模式：未配置 config.local.json 的 auth.cookie，"
+            "收不到礼物推送"
+        )
+
     log_suffix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     # sinks 缺省两种都存，watch 与单房间模式一致：日志文件和 sqlite 都写。
     # watch 模式下弹幕行的 room_id 由 websocket._dump_debug 的 extra 带入

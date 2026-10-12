@@ -14,6 +14,11 @@ class CONSTANTS:
     USER_AGENT = f"{BROWSER_NAME}/{BROWSER_VERSION}"
     BASE = "https://live.douyin.com/"
     WS_BASE = "wss://webcast100-ws-web-lq.douyin.com/"
+    # 登录 Cookie 的 Domain：浏览器里 sessionid 等是 .douyin.com 的域
+    # cookie，会发给所有子域（含 WS 握手）。aiohttp 的 CookieJar 同样
+    # 按域过滤，种的时候不写 Domain 就会退化成 live.douyin.com 的
+    # host-only cookie，WS 握手一个都带不上（游客收不到礼物推送）。
+    AUTH_COOKIE_DOMAIN = ".douyin.com"
     # 访问 live.douyin.com 前种下的会话 cookie，失效会导致房间页面拉取失败。
     AC_NONCE = "0123407cc00a9e438deb4"
 

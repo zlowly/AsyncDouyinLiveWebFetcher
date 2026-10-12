@@ -17,6 +17,12 @@ Cookie，使采集端以登录态工作（游客收不到礼物推送）：
 
     auth.cookie   浏览器复制的完整 Cookie 头，如 "sessionid=...; ..."
 
+必须从 DevTools → Network → 请求头里复制整串 Cookie；不要用控制台的
+document.cookie，那里面没有 HttpOnly 的 sessionid 等登录凭据。
+
+Cookie 会以 Domain=.douyin.com 种进 aiohttp 的 CookieJar，因此直播间
+页面与 wss://webcast*-ws-web-*.douyin.com 的 WS 握手都会带上。
+
 该文件缺失或解析失败时静默退回游客模式，不打警告（缺省即游客属正常）。
 模板见 config.local.json.example。
 """

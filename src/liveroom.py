@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from http.cookies import Morsel, SimpleCookie
 from urllib.parse import urljoin
 
 import aiohttp
@@ -9,6 +10,8 @@ from yarl import URL
 from constants import CONSTANTS
 from utils import generate_signature
 from websocket import DouyinChatWebSocketClient
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidWebridError(ValueError):
@@ -29,6 +32,26 @@ def _parse_cookie_header(raw: str) -> dict[str, str]:
         if sep and name:
             parsed[name] = value.strip()
     return parsed
+
+
+def _domain_cookies(raw: str, domain: str) -> SimpleCookie:
+    """把整串 Cookie 头转成显式带 Domain 的 cookie 集合。
+
+    浏览器发往 live.douyin.com 和 wss://webcast*-ws-web-*.douyin.com
+    的是同一批登录 cookie，因为它们是 .douyin.com 的域 cookie；aiohttp
+    的 CookieJar 也严格按域过滤，种的时候必须把 Domain 一起写上，否则
+    会退化成 host-only cookie，WS 握手时整批被丢掉（表现为登录了却收
+    不到礼物推送）。
+    """
+    scoped: SimpleCookie = SimpleCookie()
+    for name, value in _parse_cookie_header(raw).items():
+        morsel: Morsel = Morsel()
+        # coded_val 交给 aiohttp 的 quote_cookie 再转义，与浏览器一致。
+        morsel.set(name, value, value)
+        morsel["domain"] = domain
+        morsel["path"] = "/"
+        scoped[name] = morsel
+    return scoped
 
 
 class DoyinLiveRoom:
@@ -88,14 +111,27 @@ class DoyinLiveRoom:
                     raise aiohttp.ClientConnectionError(
                         "Failed to connect to Douyin Live."
                     )
-            # 先种游客 __ac_nonce 兜底，再用登录 Cookie 覆盖同名项。
-            cookies = {"__ac_nonce": CONSTANTS.AC_NONCE}
-            if auth_cookie:
-                cookies.update(_parse_cookie_header(auth_cookie))
+            # 游客 nonce 维持 host-only（只服务 live.douyin.com 的页面
+            # 抓取）；登录 cookie 必须带 Domain=.douyin.com，否则
+            # CookieJar 会因域不匹配在 WS 握手时把它们整批丢掉。
             instance._session.cookie_jar.update_cookies(
-                cookies=cookies,
+                cookies={"__ac_nonce": CONSTANTS.AC_NONCE},
                 response_url=URL(CONSTANTS.BASE),
             )
+            if auth_cookie:
+                auth_cookies = _domain_cookies(
+                    auth_cookie, CONSTANTS.AUTH_COOKIE_DOMAIN
+                )
+                instance._session.cookie_jar.update_cookies(
+                    cookies=auth_cookies,
+                    response_url=URL(CONSTANTS.BASE),
+                )
+                logger.debug(
+                    "Seeded %d auth cookies with Domain=%s: %s",
+                    len(auth_cookies),
+                    CONSTANTS.AUTH_COOKIE_DOMAIN,
+                    ", ".join(sorted(auth_cookies)),
+                )
             async with instance._session.get(
                 target, headers=instance.headers
             ) as response:
@@ -121,6 +157,7 @@ class DoyinLiveRoom:
         target = CONSTANTS.get_websocket_url(self.room_id)
         signature = generate_signature(target)
         target += f"&signature={signature}"
+        self._log_ws_cookies(target)
 
         return await DouyinChatWebSocketClient.new(
             session=self._session,
@@ -129,4 +166,20 @@ class DoyinLiveRoom:
             room_id=self.web_rid,
             stat_logger=self._stat_logger,
             stop_event=self._stop_event,
+        )
+
+    def _log_ws_cookies(self, target: str) -> None:
+        """DEBUG 下打印 WS 握手实际会带上的 cookie 名字（不打值）。
+
+        登录 cookie 的 Domain 没配对时这里会是空的，是"登录了却收不到
+        礼物推送"最直接的排查入口。
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        sent = self._session.cookie_jar.filter_cookies(URL(target))
+        logger.debug(
+            "WS handshake %s will carry %d cookies: %s",
+            CONSTANTS.WS_BASE,
+            len(sent),
+            ", ".join(sorted(sent)) or "(none)",
         )
