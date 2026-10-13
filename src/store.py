@@ -8,8 +8,8 @@
 
 公共入口 extract_payload() 供实时 handler 与离线导入共用，避免两边逻辑漂移。
 
-设计依据见 PLAN-sqlite-split.md（10 张 ev_* 分表 + chat_fts 的实施计划）
-与 /home/zsy/.opencode/plan/sqlite-split-tables.md（v2 审阅稿，决策来源）。
+设计依据见 PLAN-sqlite-split.md（10 张 ev_* 分表 + chat_fts 的实施计划，
+未入库）—— 迁移已完成，本模块是运行时的 schema 归属方。
 """
 
 import json
@@ -308,7 +308,7 @@ def project(payload):
 
 # ---- DDL：10 张互斥分区表 + 账本表 -----------------------------------
 # 公共列 16 根（不含 id）。DDL 拆成语句元组（TABLES_DDL），store 自身
-# 逐句建库，migrate_split_events.py 迁移时也逐句 execute —— 不能用
+# 逐句建库；归档的 migrate_split_events.py 迁移时也逐句 execute —— 不能用
 # executescript，它会隐式 COMMIT 破坏迁移大事务。
 _COMMON_DDL = """    -- ===== 时间与归属 =====
     -- 自增主键；同时是 chat_fts.content_rowid（external content 约定）

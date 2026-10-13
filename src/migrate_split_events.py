@@ -1,7 +1,15 @@
-"""一次性迁移：旧单表 events -> 10 张 ev_* 分表（DuckDB 退役路线）。
+"""【已归档 · 勿执行】一次性迁移：旧单表 events -> 10 张 ev_* 分表。
 
-用法（先在副本上演练，确认无写者后再跑正式库）：
+迁移**已经执行完毕**，正式库与测试库都已完成 `events -> ev_*`（对账通过，
+118,334 行一致）。本文件此后**仅作历史归档与设计依据查考**，
+不再作为可执行工具：
+它会 import store 的私有常量，且 store 拆分重构后这些 import 预期失效 ——
+不要顺手去修，修它就等于让它"看起来还能跑"，与归档定位矛盾。
 
+**误执行是安全的**：`_check_preconditions` 见到 ev_* 已存在会直接 sys.exit，
+不会改动任何数据。但也不要因为它 abort 就去手工 DROP 表。
+
+用法（历史记录，仅供理解当初怎么做）：
     python src/migrate_split_events.py --db /tmp/events-test.db
     python src/migrate_split_events.py
 
@@ -17,7 +25,8 @@ DDL 与路由常量全部 import 自 store，保证与运行时写入口径零�
 注意：本脚本逐句 execute TABLES_DDL，**不能**改用 executescript ——
 isolation_level=None 下它会隐式 COMMIT 破坏大事务。
 
-设计依据见 PLAN-sqlite-split.md Phase 2。
+设计依据见 PLAN-sqlite-split.md Phase 2（未入库，路径
+~/.opencode/plan/douyin-log-sqlite.md）。
 """
 
 import argparse

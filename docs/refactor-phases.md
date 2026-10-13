@@ -24,11 +24,16 @@
 - **先测后改**：Phase 3+ 的每项改动都必须有 Phase 1 的测试作为回归网。
 - **一次一个阶段**：每个阶段独立提交、独立可回滚，不做跨阶段的大 diff。
 - **不动生成代码**：`src/protobuf/douyin.py` 仍由 protoc 生成，不手改。
-- **口径零漂移**：DDL / 路由 / 投影规则只有一份定义，迁移脚本、实时写、离线导入共用。
-- **不改变已入库数据**：Phase 0 的迁移以"对账 + 快照 + 大事务"为准绳，出错即回滚。
+- **口径零漂移**：DDL / 路由 / 投影规则只有一份定义，实时写、离线导入、
+  归档的迁移脚本三者的历史口径由此保持一致。
+- **不改变已入库数据**：分表迁移已于本计划成文前完成（正式库与测试库均已迁移），
+  现有 schema 与数据视为冻结基线。
 
 ### 1.3 明确不做（本轮 out of scope）
 
+- **不再做分表迁移**：`events → ev_*` 已完成，见 §R3 的完成记录与 §0.3 的归档处置。
+  `src/migrate_split_events.py` 保留原位**仅作历史归档与设计依据查考**，不参与重构、
+  不搬进 `tools/`、不删改；有需要时查阅其决策与安全模型即可，**切勿再执行**。
 - 不引入 Web 框架 / 前端 / HTTP API。
 - 不换 SQLite（`douyin-log-sqlite.md` §3.1 已论证 DuckDB 硬阻塞）。
 - 不重写 protobuf 生成流程。
@@ -40,10 +45,16 @@
 ## 2. 本轮新增的实测发现（R1–R14）
 
 编号沿用既有风格，接在 `douyin-log-sqlite.md` 的 F1–F10 之后。
+其中 **R1–R4 与分表迁移相关，迁移已完成，这四条是记录与遗留缺口，不是待办**
+（详见 §R3 的基线表与 §0.3 的归档处置）。
 
-### R1 ★ FTS 会静默分裂（已在副本上复现）
+### R1 FTS 会静默分裂（历史风险，已随迁移完成而消除；仅余代码路径缺口）
 
-用当前 `store.SqliteEventStore` 打开**仍为单表结构**的库，`__init__` 的
+**结论先行：迁移已完成，当前库不存在此问题。** 以下保留是为了说明为什么
+`store.__init__` 值得加一道防御性守卫（P0.1），以及 `doctor.py` 为什么必须查
+FTS 绑定目标。
+
+成因：若用当前 `store.SqliteEventStore` 打开**仍为单表结构**的库，`__init__` 的
 `executescript(SCHEMA)`（`store.py:546`）会：
 
 ```
@@ -53,29 +64,53 @@ chat_fts：CREATE VIRTUAL TABLE IF NOT EXISTS → 因已存在被跳过
            仍绑定 content='events'（旧表）
 ```
 
-实测结果：向 `ev_chat` 插入一行**成功、不报错**，`chat_fts MATCH 'hi'` 命中 **0**，
-`integrity-check` 通过。即：**新弹幕从此不进全文索引，零告警**。
+当时在测试库副本上实测：向 `ev_chat` 插入一行**成功、不报错**，
+`chat_fts MATCH 'hi'` 命中 **0**，`integrity-check` 通过。
+即新弹幕不进全文索引，且**零告警**。
 
-### R2 ★ 迁移脚本会被自己的前置检查锁死
+残留缺口：`executescript(SCHEMA)` 假设"库结构要么是完整旧 schema、要么是完整新
+schema"。一旦将来出现混合态（手工导库、旧备份恢复、schema 演进中途），仍会
+静默错绑。→ P0.1 加守卫、P1.4 引入 `user_version`，两者是这条的正解。
+
+### R2 迁移脚本的前置检查会自锁（历史记录，已失效）
 
 `migrate_split_events.py:226 _check_preconditions` 见到任意 `ev_*` 表存在即
-`sys.exit("已存在（上一次迁移未完成？先恢复快照）")`。所以一旦 R1 发生，
-正规路径已堵死，只能手工 `DROP` 空表才能恢复。
+`sys.exit("已存在（上一次迁移未完成？先恢复快照）")`。迁移未完成时它会挡住二次执行，
+只能手工 `DROP` 空表恢复。
 
-### R3 正式库仍是单表结构
+**迁移已完成，此项不再可触发。** 该脚本此后仅作归档查阅 —— 但也正因如此，
+在 `src/` 里保留一个"看着能跑、跑了就 abort"的脚本有误伤风险，
+`doctor.py`（P0.4）的报错文案里不要再引导用户去跑它。
 
-`data/events.db` = 171 MB / 118,334 行 / freelist=0，表为 `events` +
-`events_ai|ad|au` + `chat_fts(content='events')`，**`ev_*` 一张都没有**。
-说明分表迁移尚未在正式库执行，且 fetcher 也未用新 store 写过它（否则 R1 会发生）。
-→ **窗口仍然开着，现在迁移是干净的。**
+### R3 分表迁移已完成（记录，非待办）
 
-### R4 `ip_cache.py` 已有守卫范式可抄
+正式库已于本计划成文前完成 `events → ev_*` 迁移，测试库随后于 2026-10-13
+执行同一迁移并通过对账。当前基线：
+
+| 项目 | 迁移前 | 迁移后 |
+|---|---|---|
+| 表结构 | 单表 `events` + `events_ai/ad/au` | 10 张 `ev_*`，旧表与旧触发器已删 |
+| 总行数 | 118,334 | **118,334**（逐表对账通过） |
+| `chat_fts` | `content='events'`，11 万+ 文档 | `content='ev_chat'`，11,314 文档，`MATCH '打call'` → 2,451 |
+| `ip_cache` 表 | 不存在 | 已建（0 行） |
+| 体积 | 178.5 MB | 170.4 MB（`--vacuum` 回收，`freelist=0`） |
+
+`room_id=''` 占比 **0.00%**，归属无损；`ev_gift` 为 0 行（该批测试数据采集于
+登录 Cookie 支持之前，游客模式收不到礼物推送，符合预期）。
+
+`PRAGMA user_version` 目前为 **0**（尚未引入，见 P1.4）。
+
+### R4 `ip_cache.py` 的守卫范式可借鉴
+
+迁移前它的表现：
 
 ```
 $ python src/ip_cache.py status
 中止：…/events.db 缺少分表 ['ev_chat', …, 'ip_cache']，请先跑 migrate_split_events.py
 ```
-守卫写在 CLI 层。`store.__init__` 缺同级守卫，这是 R1 的直接成因。
+
+守卫写在 CLI 层，范式本身仍然值得沿用（结构缺失 → 明确报错 + 可执行指引）。
+注意其文案已随迁移完成而过时，P5 搬进 `tools/` 时要一并更新。
 
 ### R5 ★ `SqliteLogHandler.dropped` 只写不读
 
@@ -143,7 +178,7 @@ $ python src/ip_cache.py status
 
 | 阶段 | 主题 | 改动面 | 风险 | 是否可独立发布 | 依赖 |
 |---|---|---|---|---|---|
-| **P0** | 数据止血 | `store.py` + 一次性迁移 | 低（迁移本身需演练） | 是 | — |
+| **P0** | 防御性守卫 + 可观测性 | `store.py`、`ip_cache.py` 文案 | 低 | 是 | — |
 | **P1** | 安全网 | 新增 `tests/`，不动生产代码 | 极低 | 是 | — |
 | **P2** | payload 直连 | `websocket.py` `logging_config.py` `store.py` | **中** | 是（需开关） | P1 |
 | **P3** | 拆分与去重 | `store.py` → 4 模块，`websocket.py`，常量 | 中 | 是 | P1（+P2 更稳） |
@@ -164,19 +199,32 @@ P0/P1/P4 之间无耦合，可并行推进。
 
 ## 4. Phase 0 — 数据止血（最高优先级，先做）
 
-### 0.1 `store.py` 启动守卫（修 R1）
+> 迁移已在此之前完成（§R3 是记录，不是待办；§0.3 是脚本归档处置）。
+> 本阶段只剩两项**防御性 / 可观测性**改动，风险低、收益直接。
 
-在 `SqliteEventStore.__init__` 建表**之前**检查：若存在 legacy `events` 表且不存在
-`ev_chat`，则抛错并给出可执行指引。范式抄 `ip_cache.py`。
+### 0.1 `store.py` 启动守卫（补 R1 的代码路径缺口）
+
+在 `SqliteEventStore.__init__` 建表**之前**检查库的结构状态，拒绝进入混合态。
+范式抄 `ip_cache.py`。守卫文案要区分两种情况：
 
 ```
-检测到旧单表 events（118,334 行）且缺少 ev_chat 分表。
-请先执行：python src/migrate_split_events.py --db <path>
-（务必先在副本上演练；详见 douyin-log-sqlite.md 与本计划 §4.3）
+库结构不完整：检测到旧单表 events（N 行）且缺少 ev_chat 分表。
+本项目的迁移脚本已归档、不再可执行；请从快照恢复完整库，
+或联系维护者处理。
 ```
 
-> 为何不用"自动 DROP 空 ev_* 表后继续"：自动修复会掩盖问题，且若 `ev_*` 里已
-> 有真实数据，DROP 是灾难性操作。宁可拒绝启动。
+```
+库结构版本不匹配：user_version=2，本代码期望 3。
+（多半是用旧代码打开了新库，或恢复了一份不完整的备份。）
+```
+
+> 触发条件已因迁移完成而消失，但**缺口本身还在**：`executescript(SCHEMA)` 仍假设
+> schema 只有"全旧 / 全新"两种取值，将来任何 schema 演进都会重新踩到 R1。
+> 这是低成本的前置检查，建议保留。
+>
+> 顺带覆盖另一类实际踩过的坑：`__init__` 会 `os.makedirs(..., exist_ok=True)` +
+> 无条件建库，**路径写错会静默生成一个空库**。建议同时校验目标文件是否已存在
+> 且非空（`--db` 显式传参时尤其）。
 
 ### 0.2 暴露 `dropped`（修 R5）
 
@@ -187,44 +235,49 @@ P0/P1/P4 之间无耦合，可并行推进。
 > 顺带：把队列里已经 drop 掉的事实从"隐含"变成"可观测"。这一条改动极小、
 > 收益直接，建议与 0.1 同一个提交。
 
-### 0.3 执行迁移并下线迁移脚本（修 R2/R3）
+### 0.3 迁移脚本的处理：保留归档，不执行（取代原"执行迁移并下线"）
 
-步骤（**不可跳步**）：
+`events → ev_*` 迁移已完成（数据与对账记录见 §R3）。`src/migrate_split_events.py`
+此后**保留原位、仅作历史归档与设计依据查考**：
 
-1. `cp data/events.db /tmp/opencode/events-copy.db`（已占用 1 步磁盘）。
-2. `python src/migrate_split_events.py --db /tmp/opencode/events-copy.db --vacuum`
-   → 核对逐表行数、`_reconcile` 通过、`chat_fts` 已重绑到 `ev_chat`：
-   ```sql
-   SELECT sql FROM sqlite_master WHERE name='chat_fts';   -- content='ev_chat'
-   SELECT count(*) FROM chat_fts WHERE chat_fts MATCH '打call';  -- > 0
-   INSERT INTO chat_fts(chat_fts) VALUES('integrity-check');
-   ```
-3. 确认无写者（停 fetcher），对**正式库**跑同一命令。
-4. `--vacuum` 会回收 DROP TABLE 释放的空间（需双倍磁盘，171 MB×2 无压力）。
-   建议跑：迁移后 `freelist` 会很大，不 VACUUM 磁盘占用不会下降。
-5. 验证 `python src/ip_cache.py status` 正常输出。
-6. `git rm src/migrate_split_events.py` —— 它是一次性工具，留着只会在下次
-   有人误跑时造成二次事故。迁移的"设计依据"保留在本计划 §4.3 与既有文档中。
+| 决定 | 理由 |
+|---|---|
+| 保留文件，不删 | 它的 docstring 与 `_check_preconditions` / `_reconcile` / 大事务 + 快照模型，是这次迁移的**完整决策记录**，删了就没有第二份 |
+| 不搬进 `tools/` | 与其它工具不同，它是历史物证而非可用工具；混进 `tools/` 只会增加被误跑的概率 |
+| 不做任何改写 | 改了就失真；保留原样才能作为查考依据 |
+| 文件头加一行显式标注 | 加注释而非删除："已执行完毕，本脚本不再作为可执行工具，仅供查考；误执行会因 `ev_chat` 已存在而中止。" |
+
+> 若日后 P3 拆分 `store.py`（§7.1）导致本脚本的私有常量 import 失效，
+> **允许它坏掉** —— 但要在文件头注明"依赖已重构的历史脚本，import 已失效"，
+> 不要顺手去修，修它就等于让它"看起来还能跑"，与归档定位矛盾。
+
+配套的文档动作（可延后）：
+
+- `AGENTS.md` / `store.py` 顶部对 `migrate_split_events.py` 的引用，标注为归档。
+- 删除任何"请先跑 migrate_split_events.py"的提示文案（含 `ip_cache.py` 的守卫
+  文案、R2 里提到的场景）。
 
 ### 0.4 新增库自检命令
 
 `python src/doctor.py`：一次性检查并打印
 
-- schema 版本（引入 `PRAGMA user_version`，见 P1.4）、各 `ev_*` 行数、
-- `chat_fts` 的 `content=` 绑定目标（**R1 的直接检测项**）
-- `room_id=''` 的行数占比（R3 归属健康度）
+- schema 版本（引入 `PRAGMA user_version`，见 P1.4）、各 `ev_*` 行数与合计
+- `chat_fts` 的 `content=` 绑定目标（**R1 的直接检测项**，应恒为 `ev_chat`）
+- legacy `events` 表 / `events_*` 触发器是否残留（应恒为空）
+- `room_id=''` 的行数占比（归属健康度，迁移后基线为 0.00%）
 - `imported_sessions` 与实际 app 日志的差集
 - DB 体积 / freelist / WAL 大小
 
 它是以后所有存储层改动的第一道验证工具，比"跑一次看看"可靠。
+也是 R1 那类"静默错绑"唯一的常规检测手段 —— 迁移已完成，更需要它常驻。
 
 ### 0.5 DoD
 
-- [ ] 用旧库启动 fetcher 会明确报错退出，不会写出半损坏的 FTS 索引
+- [ ] 库处于混合态（残缺 schema / 路径写错）时明确报错退出，不会写出半损坏的 FTS 索引
 - [ ] 丢弃事件在控制台与 stats 中可见
-- [ ] 正式库完成迁移，`ev_*` 行数合计 = 118,334，`chat_fts` 绑定 `ev_chat`
-- [ ] `ip_cache.py status` / `pending` / `user` 正常
-- [ ] `migrate_split_events.py` 已删除
+- [ ] `doctor.py` 能报出上述全部指标，且在本库上输出符合 §R3 基线
+- [ ] `migrate_split_events.py` 已加归档标注、位置未动
+- [ ] 全仓库无"请先跑 migrate_split_events.py"的残留文案
 
 ---
 
@@ -355,7 +408,10 @@ protobuf ──to_dict()──→ dict ──logger.debug(extra={"payload": dict
 | `loghandler.py` | `SqliteLogHandler` | ~110 |
 | `recordfmt.py` | `BASE_FIELDS`（唯一来源）+ `JsonFormatter` | ~60 |
 
-> `migrate_split_events.py` 已在本轮删除，不必考虑它的 import 兼容。
+> `migrate_split_events.py` 是归档脚本（§0.3），**不为保持它的 import 可用而让步**：
+> 它 import 了 `_COMMON_INSERT_COLS` / `_METHOD_TABLES` / `_TABLE_EXTRA_COLS` /
+> `_TABLES` / `FTS_DDL` / `TABLES_DDL` 等私有常量，拆分后失效是预期结果，
+> 在其文件头注明即可。
 
 ### 7.2 常量收敛（修 R7）
 
@@ -456,6 +512,8 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 - 新增 `tools/`：`import_logs.py` / `ip_cache.py` / `compact_logs.py` / `doctor.py`
   / `ass/`，共享一个 CLI bootstrap（argparse 基类、`open_store()`、
   路径默认值一律取自 `config`）。
+- **例外**：`migrate_split_events.py` 不搬入 `tools/`，留在 `src/` 原位作归档（§0.3）。
+  搬进去等于把它伪装成可用工具。
 - `ass.py`（574 行，弹幕→ASS 字幕）与采集主链路无关，整体搬出。
 - `ip_cache` 的 DDL 目前在 `store.py`、CLI 在 `ip_cache.py`、查询又自带一套
   `sqlite3.connect` 与锁 —— 统一到 store 的连接管理，或明确文档化"独立只读连接"的取舍。
@@ -488,7 +546,7 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 
 ### 9.7 DoD
 
-- [ ] `src/` 只剩采集主链路 + `scripts/sign.js`
+- [ ] `src/` 只剩采集主链路 + `scripts/sign.js` + 归档的 `migrate_split_events.py`
 - [ ] `logs/` 与 DB 有明确轮转/保留策略且在 `doctor.py` 中可见
 - [ ] 依赖清单与实际 import 一致
 
@@ -509,7 +567,8 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 
 | 风险 | 阶段 | 缓解 |
 |---|---|---|
-| 迁移中途失败导致数据损坏 | P0 | 单大事务 + 快照 + 逐表对账；先副本演练 |
+| 归档脚本被误执行 | 全局 | 不搬进 `tools/` + 文件头显式标注 + 删掉所有引导文案（§0.3） |
+| schema 演进时重演 R1 的静默错绑 | P1+/全局 | P0.1 守卫 + P1.4 `user_version` + `doctor.py` 常驻检测 |
 | `to_dict()` 与 `to_json()` 口径不一致 | P2 | 黄金样本逐行 diff（§6.5），不一致则退回 `to_json()+loads` |
 | 拆模块时漏改某处常量引用 | P3 | P1 的 grep/测试 + 每模块单独提交 |
 | 重构后归属漂移（事件归错房间） | P2/P3 | `room_id_from_record` 测试 + `doctor.py` 的空 `room_id` 占比监控 |
@@ -522,10 +581,13 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 
 | 批次 | 内容 | 说明 |
 |---|---|---|
-| 第 1 批 | P0 全部 + P1 全部 | 纯止血与安全网，不改采集行为，收益立即可见 |
+| 第 1 批 | P0 全部 + P1 全部 | 防御性守卫、可观测性与安全网，不改采集行为，收益立即可见 |
 | 第 2 批 | P2 | 最大的一次简化，带开关与度量 |
 | 第 3 批 | P3 + P4 | 可拆成两个并行分支（模块拆分 / 运行时） |
 | 第 4 批 | P5 | 清理与运维，随时可插队 |
 
-> 最小可行终点：**只做第 1 批**。R1/R2/R3/R5 四个已验证的问题即被消除，
+> 最小可行终点：**只做第 1 批**。R5（静默丢数据）与 R1 的代码路径缺口即被消除，
 > 且此后所有重构都有测试可依。
+>
+> 迁移已完成，**不占任何批次**（§0.3 只剩文件头标注与文案清理两件小事，
+> 可并入第 1 批或随手做掉）。

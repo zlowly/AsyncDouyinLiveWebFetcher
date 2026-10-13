@@ -12,7 +12,8 @@ fetch_ip_location.py 保持不变，它的 list.txt 由 pending 子命令生成�
     python src/ip_cache.py user <id|昵称|抖音号>
     python src/ip_cache.py status
 
-设计依据见 PLAN-sqlite-split.md Phase 5。
+设计依据见 PLAN-sqlite-split.md Phase 5（未入库，路径
+~/.opencode/plan/douyin-log-sqlite.md）。
 """
 
 import argparse
@@ -91,8 +92,13 @@ def _open(path):
         ).fetchone()
     ]
     if missing:
+        # 迁移（migrate_split_events.py）早已完成并归档，不再是"跑一下就能
+        # 修好"的问题。出现缺失只可能是库本身残缺或版本不匹配，需要人工介入。
         sys.exit(
-            f"中止：{path} 缺少分表 {missing}，请先跑 migrate_split_events.py"
+            f"中止：{path} 缺少分表 {missing}\n"
+            "分表迁移已于本项目早期完成，migrate_split_events.py 是归档脚本、"
+            "不再是修复手段。多半是这份库本身残缺（导库不全 / 备份不完整 / "
+            "用旧代码打开过），请确认库来源或联系维护者。"
         )
     return conn
 

@@ -42,8 +42,9 @@ main.py (CLI/信号/任务编排)
 
 - `DoyinLiveRoom` is spelled "Doyin" (not "Douyin") in code — search accordingly.
 - Support modules: `config.py` (读取 `config.json`，白名单 + 日志存放形式), `whitelist.py` (白名单匹配), `ntfy.py` (SSE 监听，含 `NTFY_URL`), `ui.py` (Rich 控制台输出，`print` 全部走这里), `logging_config.py` (app/room/stat 日志), `constants.py`, `utils.py` (签名 + `wait_first`).
-- `SqliteEventStore`（`store.py`）已拆表：10 张 `ev_*` 分表（按 method 路由）+ `chat_fts`（trigram 全文）+ `ip_cache`，单表 `events` 已废弃（见 PLAN-sqlite-split.md）；`payload_of(table, event_id)` 取原始 payload。
-- Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入), `migrate_split_events.py` (events → ev_* 一次性迁移，幂等前置检查 + 逐表对账), `ip_cache.py` (ip_cache 表 CLI：import-csv/pending/user/status).
+- `SqliteEventStore`（`store.py`）已拆表：10 张 `ev_*` 分表（按 method 路由）+ `chat_fts`（trigram 全文）+ `ip_cache`，单表 `events` 已废弃。**分表迁移已完成**（设计依据 PLAN-sqlite-split.md，未入库）；`payload_of(table, event_id)` 取原始 payload。
+- Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入), `ip_cache.py` (ip_cache 表 CLI：import-csv/pending/user/status), `scripts/compact_logs.py` (日志瘦身/归档), `import_logs.py` (离线补录), `doctor.py`(计划新增：库自检).
+- **`migrate_split_events.py` 已归档，勿执行** —— 迁移早已完成，它只是决策记录；误跑会因 `ev_*` 已存在而 abort。
 
 ## Key quirks
 
