@@ -31,9 +31,8 @@
 
 ### 1.3 明确不做（本轮 out of scope）
 
-- **不再做分表迁移**：`events → ev_*` 已完成，见 §R3 的完成记录与 §0.3 的归档处置。
-  `src/migrate_split_events.py` 保留原位**仅作历史归档与设计依据查考**，不参与重构、
-  不搬进 `tools/`、不删改；有需要时查阅其决策与安全模型即可，**切勿再执行**。
+- **不再做分表迁移**：`events → ev_*` 已完成，脚本已删除，决策与安全模型沉淀在
+  `docs/adr/0001-sqlite-split-migration.md`，全量代码在 git（`060abae`）。见 §R3。
 - 不引入 Web 框架 / 前端 / HTTP API。
 - 不换 SQLite（`douyin-log-sqlite.md` §3.1 已论证 DuckDB 硬阻塞）。
 - 不重写 protobuf 生成流程。
@@ -72,15 +71,17 @@ chat_fts：CREATE VIRTUAL TABLE IF NOT EXISTS → 因已存在被跳过
 schema"。一旦将来出现混合态（手工导库、旧备份恢复、schema 演进中途），仍会
 静默错绑。→ P0.1 加守卫、P1.4 引入 `user_version`，两者是这条的正解。
 
-### R2 迁移脚本的前置检查会自锁（历史记录，已失效）
+### R2 迁移脚本的自锁特性（历史记录，脚本已删除）
 
 `migrate_split_events.py:226 _check_preconditions` 见到任意 `ev_*` 表存在即
 `sys.exit("已存在（上一次迁移未完成？先恢复快照）")`。迁移未完成时它会挡住二次执行，
 只能手工 `DROP` 空表恢复。
 
-**迁移已完成，此项不再可触发。** 该脚本此后仅作归档查阅 —— 但也正因如此，
-在 `src/` 里保留一个"看着能跑、跑了就 abort"的脚本有误伤风险，
-`doctor.py`（P0.4）的报错文案里不要再引导用户去跑它。
+**迁移已完成，此项不再可触发，脚本也已删除。** 保留这条记录是因为它是 R1 的
+另一半证据：**当时能挡住二次执行，也正因如此才让人以为"跑一下就会被安全拦住"，
+从而放松了对"库已进入混合态"的警惕** —— 而 R1 恰恰是在这个状态下静默发生的。
+`doctor.py`（P0.4）的存在理由比脚本的自锁更可靠：它不依赖"跑了会不会出事"，
+只报告事实。
 
 ### R3 分表迁移已完成（记录，非待办）
 
@@ -235,27 +236,28 @@ P0/P1/P4 之间无耦合，可并行推进。
 > 顺带：把队列里已经 drop 掉的事实从"隐含"变成"可观测"。这一条改动极小、
 > 收益直接，建议与 0.1 同一个提交。
 
-### 0.3 迁移脚本的处理：保留归档，不执行（取代原"执行迁移并下线"）
+### 0.3 迁移脚本的处置：提炼 ADR + 删除脚本（已完成）
 
-`events → ev_*` 迁移已完成（数据与对账记录见 §R3）。`src/migrate_split_events.py`
-此后**保留原位、仅作历史归档与设计依据查考**：
+`events → ev_*` 迁移已完成（数据与对账记录见 §R3）。脚本**已删除**，
+知识沉淀在 `docs/adr/0001-sqlite-split-migration.md`。
 
 | 决定 | 理由 |
 |---|---|
-| 保留文件，不删 | 它的 docstring 与 `_check_preconditions` / `_reconcile` / 大事务 + 快照模型，是这次迁移的**完整决策记录**，删了就没有第二份 |
-| 不搬进 `tools/` | 与其它工具不同，它是历史物证而非可用工具；混进 `tools/` 只会增加被误跑的概率 |
-| 不做任何改写 | 改了就失真；保留原样才能作为查考依据 |
-| 文件头加一行显式标注 | 加注释而非删除："已执行完毕，本脚本不再作为可执行工具，仅供查考；误执行会因 `ev_chat` 已存在而中止。" |
+| 提炼 ADR，保留约 40 行知识 | 安全模型（大事务 + backup 快照 + 逐表对账）、UDF 解 zlib payload、`executescript` 陷阱 —— 这些**可复用**，未来任何数据迁移都该照抄 |
+| 删除 348 行可执行代码 | 剩下的是一次性胶水（argparse、逐表拷贝循环、CLI 编排），复现成本远低于维护一个死文件的成本 |
+| 全量代码留给 git | 已验证 `git show 060abae:src/migrate_split_events.py` 可完整取回；ADR 里写明命令 |
+| 不建 `archive/` 目录 | 目录**不解决真问题**：搬进去后 `python src/archive/xxx.py` 依然像条合法命令。而这类死代码目前只有 1 个，为它建约定（README + ruff exclude + AGENTS.md 路由 + 以后每次都要记得往哪放）是净开销 |
 
-> 若日后 P3 拆分 `store.py`（§7.1）导致本脚本的私有常量 import 失效，
-> **允许它坏掉** —— 但要在文件头注明"依赖已重构的历史脚本，import 已失效"，
-> 不要顺手去修，修它就等于让它"看起来还能跑"，与归档定位矛盾。
+ADR 相对"原样保留文件"的额外好处：ADR 是**可维护**的形态 —— 能加注、能被后续
+schema 演进引用（ADR §5 的三条遗留约束就是这么用的），而死文件只能读不能改，
+一改就失真。
 
-配套的文档动作（可延后）：
+> 判据留给将来：**这类死脚本攒到 3 个以上**时，在 P5 收拾工具目录时一并建
+> `src/archive/` + README + ruff 排除，一次配好，不再逐个处理。
+> 候选：`ass.py`（574 行）、`compact_logs.py` 的 rewrite 路径（332 行里的一部分）。
 
-- `AGENTS.md` / `store.py` 顶部对 `migrate_split_events.py` 的引用，标注为归档。
-- 删除任何"请先跑 migrate_split_events.py"的提示文案（含 `ip_cache.py` 的守卫
-  文案、R2 里提到的场景）。
+副作用：无。P3 拆分 `store.py` 时不必再为"保住迁移脚本的 import"做任何让步
+（见 §7.1）。
 
 ### 0.4 新增库自检命令
 
@@ -276,8 +278,9 @@ P0/P1/P4 之间无耦合，可并行推进。
 - [ ] 库处于混合态（残缺 schema / 路径写错）时明确报错退出，不会写出半损坏的 FTS 索引
 - [ ] 丢弃事件在控制台与 stats 中可见
 - [ ] `doctor.py` 能报出上述全部指标，且在本库上输出符合 §R3 基线
-- [ ] `migrate_split_events.py` 已加归档标注、位置未动
-- [ ] 全仓库无"请先跑 migrate_split_events.py"的残留文案
+- [ ] 全仓库无"请先跑迁移脚本"之类的过期引导文案
+
+> 迁移脚本的删除与 ADR 提炼已在本计划成文时一并完成（§0.3），不占用本阶段。
 
 ---
 
@@ -408,10 +411,9 @@ protobuf ──to_dict()──→ dict ──logger.debug(extra={"payload": dict
 | `loghandler.py` | `SqliteLogHandler` | ~110 |
 | `recordfmt.py` | `BASE_FIELDS`（唯一来源）+ `JsonFormatter` | ~60 |
 
-> `migrate_split_events.py` 是归档脚本（§0.3），**不为保持它的 import 可用而让步**：
-> 它 import 了 `_COMMON_INSERT_COLS` / `_METHOD_TABLES` / `_TABLE_EXTRA_COLS` /
-> `_TABLES` / `FTS_DDL` / `TABLES_DDL` 等私有常量，拆分后失效是预期结果，
-> 在其文件头注明即可。
+> 原先 import 了 `_COMMON_INSERT_COLS` / `_METHOD_TABLES` 等私有常量的迁移脚本
+> 已删除（§0.3），拆分无需为它做任何让步。ADR `0001-sqlite-split-migration.md`
+> 引用的是常量**名称**而非可执行 import，重构后如需同步更新其 §5.3。
 
 ### 7.2 常量收敛（修 R7）
 
@@ -512,8 +514,7 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 - 新增 `tools/`：`import_logs.py` / `ip_cache.py` / `compact_logs.py` / `doctor.py`
   / `ass/`，共享一个 CLI bootstrap（argparse 基类、`open_store()`、
   路径默认值一律取自 `config`）。
-- **例外**：`migrate_split_events.py` 不搬入 `tools/`，留在 `src/` 原位作归档（§0.3）。
-  搬进去等于把它伪装成可用工具。
+- **例外**：`docs/adr/` 下的 ADR 是决策记录不是工具，不参与搬运。
 - `ass.py`（574 行，弹幕→ASS 字幕）与采集主链路无关，整体搬出。
 - `ip_cache` 的 DDL 目前在 `store.py`、CLI 在 `ip_cache.py`、查询又自带一套
   `sqlite3.connect` 与锁 —— 统一到 store 的连接管理，或明确文档化"独立只读连接"的取舍。
@@ -546,7 +547,7 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 
 ### 9.7 DoD
 
-- [ ] `src/` 只剩采集主链路 + `scripts/sign.js` + 归档的 `migrate_split_events.py`
+- [ ] `src/` 只剩采集主链路 + `scripts/sign.js`，无一次性脚本残留
 - [ ] `logs/` 与 DB 有明确轮转/保留策略且在 `doctor.py` 中可见
 - [ ] 依赖清单与实际 import 一致
 
@@ -567,8 +568,8 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 
 | 风险 | 阶段 | 缓解 |
 |---|---|---|
-| 归档脚本被误执行 | 全局 | 不搬进 `tools/` + 文件头显式标注 + 删掉所有引导文案（§0.3） |
-| schema 演进时重演 R1 的静默错绑 | P1+/全局 | P0.1 守卫 + P1.4 `user_version` + `doctor.py` 常驻检测 |
+| 死代码日后被误执行 / 误"修复" | 全局 | 一次性脚本执行完即删，知识入 ADR（§0.3）；攒到 3 个再建 `src/archive/` |
+| schema 演进时重演 R1 的静默错绑 | P1+/全局 | P0.1 守卫 + P1.4 `user_version` + `doctor.py` 常驻检测 + ADR §5.1 留档 |
 | `to_dict()` 与 `to_json()` 口径不一致 | P2 | 黄金样本逐行 diff（§6.5），不一致则退回 `to_json()+loads` |
 | 拆模块时漏改某处常量引用 | P3 | P1 的 grep/测试 + 每模块单独提交 |
 | 重构后归属漂移（事件归错房间） | P2/P3 | `room_id_from_record` 测试 + `doctor.py` 的空 `room_id` 占比监控 |
@@ -589,5 +590,4 @@ BackoffPolicy(base=5, factor=2, max=300, jitter=True)
 > 最小可行终点：**只做第 1 批**。R5（静默丢数据）与 R1 的代码路径缺口即被消除，
 > 且此后所有重构都有测试可依。
 >
-> 迁移已完成，**不占任何批次**（§0.3 只剩文件头标注与文案清理两件小事，
-> 可并入第 1 批或随手做掉）。
+> 迁移已完成、脚本已删除、知识已入 ADR，**不占任何批次**。
