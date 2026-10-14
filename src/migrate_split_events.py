@@ -253,10 +253,12 @@ def main():
     )
     args = ap.parse_args()
 
-    # 目标列别名必须与 store 的插入列集合一致（防两边漂移）
+    # 目标列别名必须与 store 的插入列集合一致（防两边漂移）。只比前缀：
+    # store 后来给 ev_gift 补过列（trace_id 等），那是本脚本之后的事。
     for table in _TABLES:
         aliases = tuple(alias for _, alias in _LEGACY_EXTRA[table])
-        assert aliases == _TABLE_EXTRA_COLS[table], (table, aliases)
+        actual = _TABLE_EXTRA_COLS[table][: len(aliases)]
+        assert aliases == actual, (table, aliases)
 
     conn = sqlite3.connect(args.db, isolation_level=None)
     conn.create_function("ident", 1, _user_ident, deterministic=True)

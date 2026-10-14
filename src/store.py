@@ -37,6 +37,10 @@ _TS_DOT = "%Y-%m-%d %H:%M:%S.%f"
 # 只有这些 method 会携带 common；FansclubMessage 用的是 commonInfo。
 _COMMON_KEYS = ("common", "commonInfo")
 
+# SQLite INTEGER 的上下界
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
+
 # 房间号的三处来源：extra 字段、logger 名（room_/stat_<rid>）、消息正文。
 _ROOM_LOGGER_RE = re.compile(r"^(?:room|stat)_(\d+)$")
 _ROOM_PREFIX_RE = re.compile(r"^\[(\d{6,})\]")
@@ -54,13 +58,21 @@ def _dig(obj, *path):
 
 
 def _int(value):
-    """protobuf 把整数都序列化成字符串，安全转 int。"""
+    """protobuf 把整数都序列化成字符串，安全转 int。
+
+    超 int64 的值返回 None —— SQLite 的 INTEGER 只有 64 位，直接绑定会
+    抛 OverflowError 把整个日志写入打断（traceId 有 64 位十进制串，
+    网络侧也来路不明，宁可存 NULL）。
+    """
     if value is None or isinstance(value, bool):
         return None
     try:
-        return int(value)
+        number = int(value)
     except (TypeError, ValueError):
         return None
+    if not _INT64_MIN <= number <= _INT64_MAX:
+        return None
+    return number
 
 
 def extract_payload(record):
@@ -230,9 +242,26 @@ def _project_control(payload, row):
 
 
 def _project_gift(payload, row):
-    """Gift 拆独立表后投影 gift 名与连击数（键是 camelCase）。"""
+    """Gift 投影礼物身份、单价与连击批次（键是 camelCase）。
+
+    trace_id 是雪花 ID，一个送礼 tick 一个。实测同 traceId 的重复对除
+    msgId / createTime / repeatEnd 外字段全同，所以它是礼物去重键。
+    group_id 是连击批次外键（一个批次 N 个 tick）；comboCount 是**链内
+    累计值**，聚合要按 (user_id, group_id, gift_id) 分组取 MAX，直接
+    SUM 会把 520 连击算成 1+2+...+520。
+
+    空 traceId 归一成 NULL，好让部分唯一索引放行（实测 3 条无此字段）。
+    """
     row["gift_name"] = _dig(payload, "gift", "name")
     row["gift_count"] = _int(payload.get("comboCount"))
+    row["gift_id"] = _int(payload.get("giftId"))
+    row["diamond_count"] = _int(_dig(payload, "gift", "diamondCount"))
+    row["gift_type"] = _int(_dig(payload, "gift", "type"))
+    row["group_id"] = payload.get("groupId")
+    row["group_count"] = _int(payload.get("groupCount"))
+    row["repeat_count"] = _int(payload.get("repeatCount"))
+    row["trace_id"] = payload.get("traceId") or None
+    row["send_time"] = _int(payload.get("sendTime"))
 
 
 # method -> 该 method 独有的投影字段。公共字段（用户、等级）无条件抽取。
@@ -264,6 +293,14 @@ _NULL_COLUMNS = (
     "ranks",
     "gift_name",
     "gift_count",
+    "gift_id",
+    "diamond_count",
+    "gift_type",
+    "group_id",
+    "group_count",
+    "repeat_count",
+    "trace_id",
+    "send_time",
 )
 
 
@@ -320,12 +357,15 @@ _COMMON_DDL = """    -- ===== 时间与归属 =====
     -- web_rid 房间号。不能取 payload 的 common.roomId —— 那是直播间
     -- 内部 ID，每次会话都变，无法跨会话关联
     room_id       TEXT NOT NULL DEFAULT '',
-    -- 日志后缀：logs/app-<session>.log。与 msg_id 组成唯一键做幂等
+    -- 日志后缀：logs/app-<session>.log。仅用于归组与定位，不再参与去重
     session       TEXT NOT NULL DEFAULT '',
     -- ===== 消息标识 =====
     -- WebcastXxxMessage。决定专属列哪些有值
     method        TEXT    NOT NULL,
-    -- common.msgId，与 session 组成唯一键去重（OR IGNORE 幂等）
+    -- common.msgId。**全库唯一**，单独成唯一键去重（OR IGNORE 幂等）：
+    -- 重连时抖音会把断线前的消息原样重放，msgId 不变而 session 变了，
+    -- 所以早期用 (session, msg_id) 做的键挡不住，实测留下 8,185 行重复。
+    -- 132 万行实测 0 空值、0 跨表碰撞。NULL 不参与唯一约束。
     msg_id        TEXT,
     -- common.createTime（毫秒）。与 ts_epoch 实测差约 65 秒，
     -- 跨源对齐与精确时序分析一律以 ts_epoch 为准
@@ -351,8 +391,21 @@ _TABLE_EXTRA_DDL = {
     "ev_like": ("    like_count    INTEGER,\n    total         INTEGER"),
     # 进场成员数 / 进场动作码
     "ev_member": ("    member_count  INTEGER,\n    action        TEXT"),
-    # gift.name / comboCount
-    "ev_gift": ("    gift_name     TEXT,\n    gift_count    INTEGER"),
+    # gift.name / comboCount / 礼物身份 / 单价 / 连击批次。
+    # trace_id 供 ux_gift_trace 去重；group_id 是连击批次外键，一个批次
+    # 挂 N 个 tick（实测最多 520），comboCount 是链内累计值。
+    "ev_gift": (
+        "    gift_name     TEXT,\n"
+        "    gift_count    INTEGER,\n"
+        "    gift_id       INTEGER,\n"
+        "    diamond_count INTEGER,\n"
+        "    gift_type     INTEGER,\n"
+        "    group_id      TEXT,\n"
+        "    group_count   INTEGER,\n"
+        "    repeat_count  INTEGER,\n"
+        "    trace_id      TEXT,\n"
+        "    send_time     INTEGER"
+    ),
     # 关注/分享类型 / 关注数
     "ev_social": ("    action        TEXT,\n    follow_count  INTEGER"),
     # 在线人数 / 累计观众 / JSON [[名次, user_id, 昵称], ...]
@@ -395,10 +448,21 @@ def _build_tables_ddl():
         extra = _TABLE_EXTRA_DDL[table]
         body = _COMMON_DDL + (f",\n{extra}\n" if extra else "\n")
         stmts.append(f"CREATE TABLE IF NOT EXISTS {table} (\n{body});")
+        # 幂等键 = msg_id 单列。旧的 (session, msg_id) 挡不住重连重放
+        # （session 变了 msgId 没变），这里收窄成单列：索引数量不变、
+        # 写入成本不增，索引本身还变小。
         stmts.append(
-            f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{table[3:]}_session_msg"
-            f" ON {table}(session, msg_id);"
+            f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{table[3:]}_msg"
+            f" ON {table}(msg_id);"
         )
+        if table == "ev_gift":
+            # 第二层去重：抖音把同一条礼物消息重推一遍（同 traceId，
+            # 间隔约 2.5 秒，末条带 repeatEnd=1）。28,180 -> 18,026 行。
+            # 部分索引放行那 3 条本来就没有 traceId 的消息。
+            stmts.append(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_gift_trace"
+                " ON ev_gift(trace_id) WHERE trace_id IS NOT NULL;"
+            )
         stmts.append(
             f"CREATE INDEX IF NOT EXISTS idx_{table[3:]}_ts"
             f" ON {table}(ts_epoch);"
@@ -504,7 +568,18 @@ _TABLE_EXTRA_COLS = {
     "ev_chat": ("content",),
     "ev_like": ("like_count", "total"),
     "ev_member": ("member_count", "action"),
-    "ev_gift": ("gift_name", "gift_count"),
+    "ev_gift": (
+        "gift_name",
+        "gift_count",
+        "gift_id",
+        "diamond_count",
+        "gift_type",
+        "group_id",
+        "group_count",
+        "repeat_count",
+        "trace_id",
+        "send_time",
+    ),
     "ev_social": ("action", "follow_count"),
     "ev_rank": ("total", "total_user", "ranks"),
     "ev_stats": ("total",),
@@ -544,6 +619,17 @@ class SqliteEventStore:
         with self._lock:
             try:
                 self._conn.executescript(SCHEMA)
+            except sqlite3.IntegrityError as exc:
+                # 唯一索引建在还有重复行的旧库上就是这个错。旧库的键是
+                # (session, msg_id)，挡不住重连重放，必须先迁移。
+                self._conn.close()
+                raise RuntimeError(
+                    f"建唯一索引失败：{exc}\n"
+                    "库中残留重复行（重连重放 / 礼物重推），幂等键已从"
+                    "(session, msg_id) 收窄为 msg_id。\n"
+                    "请先跑一次：python src/migrate_dedup_events.py"
+                    "（先 --dry-run 看统计，加 --snapshot-dir 保快照）。"
+                ) from exc
             except sqlite3.OperationalError as exc:
                 self._conn.close()
                 raise RuntimeError(
