@@ -46,8 +46,9 @@ main.py (CLI/信号/任务编排)
   - 幂等口径 = `ux_<table>_msg(msg_id)` **单列**唯一索引：`msgId` 全局唯一，**`session` 不再参与去重**——重连后抖音原样重推、`msgId` 不变而 `session` 变，旧 `(session,msg_id)` 复合键实测漏掉 8,177 组。
   - 礼物另加 `ux_gift_trace ON ev_gift(trace_id) WHERE trace_id IS NOT NULL`：`traceId` 是雪花 ID、一个送礼 tick 一个，连击链每 tick 一个新 traceId（共享 `groupId`），**traceId 相同=重推、traceId 不同且 groupId 相同=连击**；`repeatEnd` 不可用于判重。
   - **旧库升级顺序**：`python src/migrate_dedup_events.py`（先 `--dry-run` 看统计）。未迁移就开跑，`SqliteEventStore.__init__` 会抛 IntegrityError 并提示同一条命令。
+  - **查 `chat_fts` 的两个静默陷阱**：① trigram 检索不到 **1~2 字符**的词，`MATCH '主播'` 返回 0 而**不报错**，短词必须降级 `content LIKE ? ESCAPE '\'`（转义 `\ % _`，否则被当通配符）；② `MATCH` **不带列过滤 = content + user_name 都搜**（`MATCH '"哈哈哈"'`=1655，而 `MATCH 'content:"哈哈哈"'`=正文 845、昵称 831），只看正文必须写 `content:` 前缀。`tokenize='trigram'` 默认 `case_sensitive=0`，ASCII 大小写与 LIKE 一致。检索入口用 `python tools/search_chat.py -k <词>`（≥3 字走索引 ~10ms，1~2 字走全表扫 ~80ms）。
 - Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入), `migrate_split_events.py` (events → ev_* 一次性迁移，幂等前置检查 + 逐表对账), `migrate_dedup_events.py` (msg_id 全局去重 + ev_gift 补列回填 + traceId 去重 + 换唯一索引；`--dry-run`/`--snapshot-dir`/`--vacuum`；快照在 BEGIN IMMEDIATE 之前用第二个连接 backup), `ip_cache.py` (ip_cache 表 CLI：import-csv/pending/user/status).
-- Standalone tools in `tools/`（自 `~/scripts/` 迁入，路径自定位）: `extract_and_visualize_log_data_sqlite.py` / `process_log_sqlite.py` (ev_* 分表提取、估算画图与消息导出), `session_db.py` (场次选择公共模块), `sixel_plot.py` (纯标准库 Sixel 渲染), `fetch_ip_location.py` (IP 属地抓取，需 scrapling 环境), `track.zsh` / `user_info.zsh` (属地抓取管线 / 单用户速查). 详见 `tools/README.md`.
+- Standalone tools in `tools/`（自 `~/scripts/` 迁入，路径自定位）: `extract_and_visualize_log_data_sqlite.py` / `process_log_sqlite.py` (ev_* 分表提取、估算画图与消息导出), `search_chat.py` (跨全部场次/房间检索 ev_chat 弹幕正文，命中明细 tsv/json；≥3 字走 chat_fts 索引、1~2 字降级 LIKE), `dbcli.py` (命令行参数与时间过滤公共模块，`-S`/`--start`/`--end`/`-r` 语义统一由它定义), `session_db.py` (场次选择公共模块), `sixel_plot.py` (纯标准库 Sixel 渲染), `fetch_ip_location.py` (IP 属地抓取，需 scrapling 环境), `track.zsh` / `user_info.zsh` (属地抓取管线 / 单用户速查). 详见 `tools/README.md`.
 
 ## Key quirks
 
