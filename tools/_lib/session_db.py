@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 DEFAULT_DB_PATH = (
-    Path(__file__).resolve().parent.parent / "data" / "events.db"
+    Path(__file__).resolve().parent.parent.parent / "data" / "events.db"
 )
 
 _SESSION_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")

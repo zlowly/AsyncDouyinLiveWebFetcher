@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import collections
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 import session_db  # noqa: E402
 
 try:

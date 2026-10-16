@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 import dbcli  # noqa: E402
 import session_db  # noqa: E402
 # 参数解析与时间过滤统一在 dbcli，search_chat.py 也 import 同一份。

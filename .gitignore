@@ -21,3 +21,6 @@ config.local.json
 # 第三方工具输出
 graphify-out/
 .opencode/
+
+# deepwork 工作流状态（不入库）
+.slim/
