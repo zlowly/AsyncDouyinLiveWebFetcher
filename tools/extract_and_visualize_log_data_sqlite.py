@@ -1127,8 +1127,7 @@ def print_sixel_comparison_chart(data_a, data_b, value_key, chart_title,
                                    block_style=block_style)
 
 
-# --- 主执行块 ---
-if __name__ == "__main__":
+def build_parser():
     parser = argparse.ArgumentParser(
         description="从 events.db 提取、估算并可视化 totalUserCount 和 audienceCount。",
         formatter_class=argparse.RawTextHelpFormatter
@@ -1277,7 +1276,13 @@ if __name__ == "__main__":
              "此参数独立于 --max-extrapolation-minutes。默认为 5 分钟。"
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+# --- 主执行块 ---
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     conn = session_db.open_db(args.db)
     room_filter = (
@@ -1289,7 +1294,7 @@ if __name__ == "__main__":
         session_db.print_session_list(
             session_db.list_sessions(conn, rooms=room_filter)
         )
-        sys.exit(0)
+        return 0
 
     sessions_pool = session_db.list_sessions(conn, rooms=room_filter)
     args.session_a = session_db.resolve_session(
@@ -1315,7 +1320,7 @@ if __name__ == "__main__":
         print("错误: 找不到 sixel_plot.py，无法渲染 Sixel 图形。"
               "请把它与本脚本放在同一目录，或改用 --chart-format ascii。",
               file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     chart_height = args.chart_height
     if chart_height is None:
@@ -1325,7 +1330,7 @@ if __name__ == "__main__":
         if chart_height % sixel_plot.BAND_HEIGHT or chart_height <= 0:
             print(f"错误: --chart-height 必须是 {sixel_plot.BAND_HEIGHT} 的正整数倍，"
                   f"当前为 {chart_height}。", file=sys.stderr)
-            sys.exit(1)
+            return 1
 
     target_metrics = []
     if args.metrics:
@@ -1335,11 +1340,11 @@ if __name__ == "__main__":
 
     if not target_metrics:
         print("错误: 必须至少选择一个指标进行估算 (totalUserCount 或 audienceCount)。", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     if not (0 <= args.audience_decay_factor <= 1):
         print("错误: --audience-decay-factor 必须在 0 到 1 之间。", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     if args.session_b and args.session_a == args.session_b:
         print("警告: 两个场次相同，A/B 比对将得到完全相同的两列。", file=sys.stderr)
@@ -1393,7 +1398,7 @@ if __name__ == "__main__":
                 print(f"错误: 场次 '{session_id}' ({tag}) 未提取到任何符合条件的数据，无法比对。", file=sys.stderr)
             else:
                 print("未从该场次提取到任何符合条件的数据，无法进行估算和可视化。")
-            sys.exit(0)
+            return 0
 
         if DEBUG_MODE:
             print(f"DEBUG: [{tag}] 提取到 {len(raw_data)} 条原始数据。", file=sys.stderr)
@@ -1423,7 +1428,7 @@ if __name__ == "__main__":
             print(f"无法为 {args.interval} 分钟间隔估算出任何有效数据"
                   f"{f' (场次 {tag}: {session_id})' if compare_mode else ''}，"
                   f"请检查数据或调整估算参数。")
-            sys.exit(0)
+            return 0
 
         if DEBUG_MODE:
             print(f"DEBUG: [{tag}] 估算后生成 {len(interpolated_data)} 条数据。", file=sys.stderr)
@@ -1477,3 +1482,9 @@ if __name__ == "__main__":
             else:
                 print_comparison_bar_chart(data_a, data_b, metric, display_title,
                                            block_style=block_style)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

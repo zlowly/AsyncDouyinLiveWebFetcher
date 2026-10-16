@@ -255,7 +255,7 @@ def process_sessions(conn, groups, output_format="tsv", start=None, end=None,
         sys.exit(1)
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="从 events.db 的分表中提取聊天、礼物、关注/分享、"
                     "粉丝团消息，支持场次指定、时间段过滤、单用户过滤，"
@@ -327,7 +327,7 @@ if __name__ == "__main__":
         help=f"events.db 路径（缺省 {session_db.DEFAULT_DB_PATH}）。",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     conn = session_db.open_db(args.db)
 
@@ -335,7 +335,7 @@ if __name__ == "__main__":
         session_db.print_session_list(
             session_db.list_sessions(conn, rooms=args.rooms)
         )
-        sys.exit(0)
+        return 0
 
     groups = select_sessions(
         conn, args.start, args.end, args.rooms, args.session
@@ -363,3 +363,8 @@ if __name__ == "__main__":
             and sys.stdout.isatty()
         ),
     )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
