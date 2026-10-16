@@ -82,7 +82,8 @@ def _epoch_bounds(start, end):
         low = start[0].timestamp()
     if end is not None:
         end_dt, end_gran = end
-        # 纯日期的 --end 含义是当天 23:59:59.999999，与 build_time_filter 一致。
+        # 纯日期的 --end 含义是当天 23:59:59.999999，
+        # 与 build_time_filter 一致。
         if end_gran == "date":
             end_dt = end_dt + timedelta(days=1) - timedelta(microseconds=1)
         high = end_dt.timestamp()
@@ -231,7 +232,8 @@ def build_parser():
         metavar="TERM",
         help="要检索的词（子串匹配）。>= 3 字走 FTS 索引，1~2 字自动"
              "改走 LIKE（trigram 索引检索不到这么短的词）。"
-             "含 % _ \\ 时按字面量处理，含 \" 也不会破坏查询。"
+             # argparse 对 help 做 % 格式化，字面量 % 必须写 %%
+             '含 %% _ \\ 时按字面量处理，含 " 也不会破坏查询。'
     )
     parser.add_argument(
         "--like",
