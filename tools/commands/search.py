@@ -26,7 +26,7 @@ MATCH 参数整体包成短语、`"` 翻倍；LIKE 参数转义 \\ % _ 并配 ES
 用法示例：
   python tools/tool search -k 哈哈哈                  # 全库全房间
   python tools/tool search -k 主播 --limit 0          # 2 字词走 LIKE
-  python tools/tool search -k 6666 -S 2026-10-15      # 限某一场
+  python tools/tool search -k 6666 -S 2026-10-06:2     # 限某一场
   python tools/tool search -k 笑 --start 20:00 --end 22:00
   python tools/tool search -k 礼物 -o json
 """

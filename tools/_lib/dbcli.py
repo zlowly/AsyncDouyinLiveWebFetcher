@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """命令行参数解析与时间过滤的公共模块，供 tools/ 下的 sqlite 脚本共用。
 
-被 process_log_sqlite.py 与 search_chat.py import，保证两边的
+被 commands/messages.py 与 commands/search.py import，保证两边的
 -S / --start / --end / -r 语义完全一致，不会各写一份慢慢漂移。
 
 约定：

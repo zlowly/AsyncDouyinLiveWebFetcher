@@ -20,6 +20,10 @@ python tools/tool <子命令> --help     # 查看某个子命令的完整参数
 每个子命令模块内部也自行把 `tools/_lib` 注入 `sys.path`，`--db` 可覆盖
 events.db 路径。
 
+> 例外：`fetch` 的模块顶层就 `import scrapling`，所以**必须先切到装了
+> scrapling 的环境**才能看到它的 `--help`——本机没装时它走的是 ImportError
+> 分支（退出码 3），拿不到参数列表。
+
 ## 子命令
 
 | 子命令 | 用途 | 运行要求 |
