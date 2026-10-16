@@ -1,4 +1,4 @@
-$ search_chat.py -k 礼物 --limit 3
+$ commands/search.py -k 礼物 --limit 3
 --- exit: 0
 --- stdout:
 timestamp	room_id	speaker	content

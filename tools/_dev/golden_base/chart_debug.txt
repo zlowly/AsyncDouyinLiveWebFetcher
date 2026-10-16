@@ -1,4 +1,4 @@
-$ extract_and_visualize_log_data_sqlite.py -d --chart-format ascii
+$ commands/chart.py -d --chart-format ascii
 --- exit: 0
 --- stdout:
 

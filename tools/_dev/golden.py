@@ -28,61 +28,62 @@ REPO = TOOLS.parent                             # 仓库根
 BASE = HERE / "golden_base"
 
 # (fixture 名, argv 列表)。--chart-format sixel 这类依赖终端的显式给 ascii。
+# argv[0] 是相对 tools/ 的脚本路径（P4 起命令模块在 commands/ 下，故带前缀）。
 FIXTURES = [
-    # ---- chart (extract_and_visualize_log_data_sqlite.py) ----
-    ("chart_default",        ["extract_and_visualize_log_data_sqlite.py"]),
-    ("chart_list_sessions",  ["extract_and_visualize_log_data_sqlite.py", "--list-sessions"]),
-    ("chart_ascii",          ["extract_and_visualize_log_data_sqlite.py", "--chart-format", "ascii"]),
-    ("chart_audience",       ["extract_and_visualize_log_data_sqlite.py", "-m", "audienceCount", "--chart-format", "ascii"]),
-    ("chart_session_exact",  ["extract_and_visualize_log_data_sqlite.py", "2026-10-14_21-57-54", "--chart-format", "ascii"]),
-    ("chart_compare",        ["extract_and_visualize_log_data_sqlite.py", "2026-10-14_21-57-54",
+    # ---- chart (commands/chart.py) ----
+    ("chart_default",        ["commands/chart.py"]),
+    ("chart_list_sessions",  ["commands/chart.py", "--list-sessions"]),
+    ("chart_ascii",          ["commands/chart.py", "--chart-format", "ascii"]),
+    ("chart_audience",       ["commands/chart.py", "-m", "audienceCount", "--chart-format", "ascii"]),
+    ("chart_session_exact",  ["commands/chart.py", "2026-10-14_21-57-54", "--chart-format", "ascii"]),
+    ("chart_compare",        ["commands/chart.py", "2026-10-14_21-57-54",
                               "-c", "2026-10-14_08-04-40", "--chart-format", "ascii"]),
-    ("chart_rooms",          ["extract_and_visualize_log_data_sqlite.py", "-r", "249069870647", "--chart-format", "ascii"]),
-    ("chart_bar_ascii",      ["extract_and_visualize_log_data_sqlite.py", "--bar-style", "ascii", "--chart-format", "ascii"]),
-    ("chart_bad_session",    ["extract_and_visualize_log_data_sqlite.py", "1999-01-01:1", "--chart-format", "ascii"]),
-    ("chart_bad_chart_h",    ["extract_and_visualize_log_data_sqlite.py", "--chart-format", "ascii", "--chart-height", "100"]),
-    ("chart_decay_bad",      ["extract_and_visualize_log_data_sqlite.py", "-a", "5.0", "--chart-format", "ascii"]),
+    ("chart_rooms",          ["commands/chart.py", "-r", "249069870647", "--chart-format", "ascii"]),
+    ("chart_bar_ascii",      ["commands/chart.py", "--bar-style", "ascii", "--chart-format", "ascii"]),
+    ("chart_bad_session",    ["commands/chart.py", "1999-01-01:1", "--chart-format", "ascii"]),
+    ("chart_bad_chart_h",    ["commands/chart.py", "--chart-format", "ascii", "--chart-height", "100"]),
+    ("chart_decay_bad",      ["commands/chart.py", "-a", "5.0", "--chart-format", "ascii"]),
     # P2 曾把 --debug 与 --color always 弄失效（模块级开关在 main() 里被局部遮蔽，
     # helper 仍读初值），而这两条 fixture 缺失导致 golden 全绿放行。补上以锁死。
-    ("chart_debug",          ["extract_and_visualize_log_data_sqlite.py", "-d", "--chart-format", "ascii"]),
-    ("chart_debug_session",  ["extract_and_visualize_log_data_sqlite.py", "-d", "--chart-format", "ascii",
+    ("chart_debug",          ["commands/chart.py", "-d", "--chart-format", "ascii"]),
+    ("chart_debug_session",  ["commands/chart.py", "-d", "--chart-format", "ascii",
                               "2026-10-14_21-57-54"]),
-    ("chart_color_always",   ["extract_and_visualize_log_data_sqlite.py", "2026-10-14_21-57-54",
+    ("chart_color_always",   ["commands/chart.py", "2026-10-14_21-57-54",
                               "-c", "2026-10-14_08-04-40", "--color", "always", "--chart-format", "ascii"]),
     # 唯一可达的 sixel 分支：--chart-height 非 BAND_HEIGHT 倍数的校验
     # （只在该分支内生效，ascii 模式不触发）。sixel_plot 本身可用时走真渲染。
-    ("chart_sixel_bad_h",    ["extract_and_visualize_log_data_sqlite.py",
+    ("chart_sixel_bad_h",    ["commands/chart.py",
                               "--chart-format", "sixel", "--chart-height", "100"]),
 
-    # ---- messages (process_log_sqlite.py) ----
-    ("msg_default",          ["process_log_sqlite.py"]),
-    ("msg_list_sessions",    ["process_log_sqlite.py", "--list-sessions"]),
-    ("msg_session",          ["process_log_sqlite.py", "-S", "2026-10-11:1", "-o", "tsv"]),
-    ("msg_session_last",     ["process_log_sqlite.py", "-S", "2026-10-14:-1", "-o", "tsv"]),
-    ("msg_json",             ["process_log_sqlite.py", "-S", "2026-10-11:1", "-o", "json"]),
-    ("msg_user",             ["process_log_sqlite.py", "-u", "咲夜*", "-o", "tsv"]),
-    ("msg_nocolor",          ["process_log_sqlite.py", "-S", "2026-10-11:1", "--no-color", "-o", "tsv"]),
-    ("msg_rooms_one",        ["process_log_sqlite.py", "-r", "249069870647", "-S", "2026-10-11:1", "-o", "tsv"]),
-    ("msg_time_range",       ["process_log_sqlite.py", "--start", "2026-10-14", "--end", "2026-10-15", "-o", "tsv"]),
-    ("msg_bad_session",      ["process_log_sqlite.py", "-S", "1999-01-01:1", "-o", "tsv"]),
-    ("msg_empty_range",      ["process_log_sqlite.py", "--start", "1999-01-01", "--end", "1999-01-02", "-o", "tsv"]),
+    # ---- messages (commands/messages.py) ----
+    ("msg_default",          ["commands/messages.py"]),
+    ("msg_list_sessions",    ["commands/messages.py", "--list-sessions"]),
+    ("msg_session",          ["commands/messages.py", "-S", "2026-10-11:1", "-o", "tsv"]),
+    ("msg_session_last",     ["commands/messages.py", "-S", "2026-10-14:-1", "-o", "tsv"]),
+    ("msg_json",             ["commands/messages.py", "-S", "2026-10-11:1", "-o", "json"]),
+    ("msg_user",             ["commands/messages.py", "-u", "咲夜*", "-o", "tsv"]),
+    ("msg_nocolor",          ["commands/messages.py", "-S", "2026-10-11:1", "--no-color", "-o", "tsv"]),
+    ("msg_rooms_one",        ["commands/messages.py", "-r", "249069870647", "-S", "2026-10-11:1", "-o", "tsv"]),
+    ("msg_time_range",       ["commands/messages.py", "--start", "2026-10-14", "--end", "2026-10-15", "-o", "tsv"]),
+    ("msg_bad_session",      ["commands/messages.py", "-S", "1999-01-01:1", "-o", "tsv"]),
+    ("msg_empty_range",      ["commands/messages.py", "--start", "1999-01-01", "--end", "1999-01-02", "-o", "tsv"]),
 
-    # ---- search (search_chat.py) ----
-    ("search_help",          ["search_chat.py", "--help"]),
-    ("search_k3",            ["search_chat.py", "-k", "哈哈哈"]),
-    ("search_k2",            ["search_chat.py", "-k", "主播"]),
-    ("search_kpct",          ["search_chat.py", "-k", "%"]),
-    ("search_like",          ["search_chat.py", "--like", "-k", "笑"]),
-    ("search_order_asc",     ["search_chat.py", "-k", "礼物", "--order", "asc", "--limit", "5"]),
-    ("search_json",          ["search_chat.py", "-k", "6666", "-o", "json"]),
-    ("search_nohit",         ["search_chat.py", "-k", "zzzzzz不存在的词"]),
-    ("search_session",       ["search_chat.py", "-k", "礼物", "-S", "2026-10-11:1"]),
-    ("search_list_sessions", ["search_chat.py", "--list-sessions"]),
-    ("search_nokw",          ["search_chat.py"]),
-    ("search_db_bad",        ["search_chat.py", "-k", "x", "--db", "/tmp/opencode/nonexistent.db"]),
+    # ---- search (commands/search.py) ----
+    ("search_help",          ["commands/search.py", "--help"]),
+    ("search_k3",            ["commands/search.py", "-k", "哈哈哈"]),
+    ("search_k2",            ["commands/search.py", "-k", "主播"]),
+    ("search_kpct",          ["commands/search.py", "-k", "%"]),
+    ("search_like",          ["commands/search.py", "--like", "-k", "笑"]),
+    ("search_order_asc",     ["commands/search.py", "-k", "礼物", "--order", "asc", "--limit", "5"]),
+    ("search_json",          ["commands/search.py", "-k", "6666", "-o", "json"]),
+    ("search_nohit",         ["commands/search.py", "-k", "zzzzzz不存在的词"]),
+    ("search_session",       ["commands/search.py", "-k", "礼物", "-S", "2026-10-11:1"]),
+    ("search_list_sessions", ["commands/search.py", "--list-sessions"]),
+    ("search_nokw",          ["commands/search.py"]),
+    ("search_db_bad",        ["commands/search.py", "-k", "x", "--db", "/tmp/opencode/nonexistent.db"]),
 
     # ---- dbcli / session_db 公共模块（库级，不单独运行，冒烟 import）----
-    ("lib_search_chat_ok",   ["search_chat.py", "-k", "礼物", "--limit", "3"]),
+    ("lib_search_chat_ok",   ["commands/search.py", "-k", "礼物", "--limit", "3"]),
 ]
 
 
@@ -102,9 +103,17 @@ def run_fixture(name, argv):
     env["NO_COLOR"] = "1"
     env["COLUMNS"] = "100"
     env["PYTHONHASHSEED"] = "0"    # 消除 set 迭代顺序抖动
+    script = TOOLS / argv[0]
+    if not script.is_file():
+        # 搬迁/改名后 fixture 若指错路径（如仍写旧脚本名），subprocess 只会报
+        # 「找不到文件」并被当成一条普通差异，容易误判为「只是脚本名变了」。
+        # 这里显式炸掉：fixture 目标不存在即验收机制本身失效。
+        raise FileNotFoundError(
+            f"fixture {name!r} 的命令脚本不存在: {script}"
+        )
     try:
         proc = subprocess.run(
-            [sys.executable, str(TOOLS / argv[0]), *argv[1:]],
+            [sys.executable, str(script), *argv[1:]],
             cwd=REPO, env=env, capture_output=True, text=True,
             timeout=300,
         )

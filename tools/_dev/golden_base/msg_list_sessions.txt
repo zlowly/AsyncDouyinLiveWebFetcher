@@ -1,4 +1,4 @@
-$ process_log_sqlite.py --list-sessions
+$ commands/messages.py --list-sessions
 --- exit: 0
 --- stdout:
 day         #  session              room_id       start          end             chats

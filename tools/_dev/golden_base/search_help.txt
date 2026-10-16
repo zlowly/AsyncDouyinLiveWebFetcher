@@ -1,8 +1,8 @@
-$ search_chat.py --help
+$ commands/search.py --help
 --- exit: 0
 --- stdout:
-usage: search_chat.py [-h] -k TERM [--like] [-S SPEC] [--list-sessions] [-r ROOMS] [--start TIME]
-                      [--end TIME] [-o {tsv,json}] [--order {asc,desc}] [--limit N] [--db PATH]
+usage: search.py [-h] -k TERM [--like] [-S SPEC] [--list-sessions] [-r ROOMS] [--start TIME]
+                 [--end TIME] [-o {tsv,json}] [--order {asc,desc}] [--limit N] [--db PATH]
 
 在 events.db 的 ev_chat 里跨全部场次检索弹幕正文（>= 3 字走 FTS 索引，1~2 字自动降级 LIKE），支持场次/时间/房间过滤，输出命中明细 tsv 或 json。
 

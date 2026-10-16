@@ -1,4 +1,4 @@
-$ process_log_sqlite.py --start 2026-10-14 --end 2026-10-15 -o tsv
+$ commands/messages.py --start 2026-10-14 --end 2026-10-15 -o tsv
 --- exit: 0
 --- stdout:
 timestamp	speaker	content

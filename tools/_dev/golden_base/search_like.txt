@@ -1,4 +1,4 @@
-$ search_chat.py --like -k 笑
+$ commands/search.py --like -k 笑
 --- exit: 0
 --- stdout:
 timestamp	room_id	speaker	content

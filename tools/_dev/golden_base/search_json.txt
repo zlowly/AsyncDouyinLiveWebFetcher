@@ -1,4 +1,4 @@
-$ search_chat.py -k 6666 -o json
+$ commands/search.py -k 6666 -o json
 --- exit: 0
 --- stdout:
 [

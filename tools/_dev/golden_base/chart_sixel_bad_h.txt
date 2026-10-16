@@ -1,4 +1,4 @@
-$ extract_and_visualize_log_data_sqlite.py --chart-format sixel --chart-height 100
+$ commands/chart.py --chart-format sixel --chart-height 100
 --- exit: 1
 --- stdout:
 

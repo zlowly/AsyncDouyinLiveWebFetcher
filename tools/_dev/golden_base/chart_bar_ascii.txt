@@ -1,4 +1,4 @@
-$ extract_and_visualize_log_data_sqlite.py --bar-style ascii --chart-format ascii
+$ commands/chart.py --bar-style ascii --chart-format ascii
 --- exit: 0
 --- stdout:
 正在处理场次: 2026-10-14_21-57-54

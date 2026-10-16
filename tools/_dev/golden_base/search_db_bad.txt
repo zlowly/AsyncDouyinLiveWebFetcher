@@ -1,4 +1,4 @@
-$ search_chat.py -k x --db /tmp/opencode/nonexistent.db
+$ commands/search.py -k x --db /tmp/opencode/nonexistent.db
 --- exit: 1
 --- stdout:
 

@@ -1,4 +1,4 @@
-$ extract_and_visualize_log_data_sqlite.py --list-sessions
+$ commands/chart.py --list-sessions
 --- exit: 0
 --- stdout:
 day         #  session              room_id       start          end             chats

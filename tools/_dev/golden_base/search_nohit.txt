@@ -1,4 +1,4 @@
-$ search_chat.py -k zzzzzz不存在的词
+$ commands/search.py -k zzzzzz不存在的词
 --- exit: 1
 --- stdout:
 

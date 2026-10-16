@@ -1,4 +1,4 @@
-$ process_log_sqlite.py 
+$ commands/messages.py 
 --- exit: 0
 --- stdout:
 timestamp	speaker	content

@@ -1,8 +1,8 @@
-$ search_chat.py 
+$ commands/search.py 
 --- exit: 2
 --- stdout:
 
 --- stderr:
-usage: search_chat.py [-h] -k TERM [--like] [-S SPEC] [--list-sessions] [-r ROOMS] [--start TIME]
-                      [--end TIME] [-o {tsv,json}] [--order {asc,desc}] [--limit N] [--db PATH]
-search_chat.py: error: the following arguments are required: -k/--keyword
+usage: search.py [-h] -k TERM [--like] [-S SPEC] [--list-sessions] [-r ROOMS] [--start TIME]
+                 [--end TIME] [-o {tsv,json}] [--order {asc,desc}] [--limit N] [--db PATH]
+search.py: error: the following arguments are required: -k/--keyword

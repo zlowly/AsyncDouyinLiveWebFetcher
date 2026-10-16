@@ -37,7 +37,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 import dbcli  # noqa: E402
 import session_db  # noqa: E402
 

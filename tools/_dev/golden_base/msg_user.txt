@@ -1,4 +1,4 @@
-$ process_log_sqlite.py -u 咲夜* -o tsv
+$ commands/messages.py -u 咲夜* -o tsv
 --- exit: 0
 --- stdout:
 timestamp	speaker	content

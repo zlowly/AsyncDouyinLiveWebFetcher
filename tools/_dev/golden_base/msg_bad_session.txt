@@ -1,4 +1,4 @@
-$ process_log_sqlite.py -S 1999-01-01:1 -o tsv
+$ commands/messages.py -S 1999-01-01:1 -o tsv
 --- exit: 1
 --- stdout:
 
