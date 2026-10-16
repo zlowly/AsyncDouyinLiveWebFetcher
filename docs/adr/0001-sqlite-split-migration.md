@@ -118,6 +118,26 @@ _IDENT_EXPRS = (
 → 迁移完成后遗留的代码缺口。正解是 `store.__init__` 加结构守卫 +
 `PRAGMA user_version` 版本锚（见 `docs/refactor-phases.md` P0.1 / P1.4）。
 
+§5.1 之后又演进过一次幂等键，同样只能改 `store.py` 的 DDL 段（§5.3），
+并按本 ADR 结尾的约定同步回本节：
+
+- 幂等键从 `(session, msg_id)` 收窄为**单列** `ux_<table>_msg(msg_id)`：
+  重连时抖音原样重推，`msgId` 不变而 `session` 变，复合键挡不住（实测
+  漏 8,177 组）；`msgId` 全局唯一，`session` 不再参与去重。
+- `ev_gift` 另加部分唯一索引
+  `ux_gift_trace ON ev_gift(trace_id) WHERE trace_id IS NOT NULL`。
+  `traceId` 是雪花 ID、一个送礼 tick 一个，同 `traceId`=重推、同
+  `groupId` 不同 `traceId`=连击；`repeatEnd` 不可用于判重。
+- `CREATE TABLE IF NOT EXISTS` 不会补列，故 `ev_gift.trace_id` 补列与旧
+  `ux_<table>_session_msg` 索引清理改由 `SqliteEventStore.__init__` 在
+  `executescript(SCHEMA)` **之前**幂等自愈（`ALTER TABLE ... ADD COLUMN`
+  + `DROP INDEX IF EXISTS`，逐句 `execute`），不再需要一次性脚本。
+- **不做 `trace_id` 回填**：部分唯一索引容忍 NULL，老行 `trace_id` 留空
+  不影响新写入，回填需逐行解 payload，成本大于收益。
+- 历史 `migrate_dedup_events.py` **未随合并进入本仓库**，且该路径在本仓库
+  从未提交（`git show 59fb32f:src/migrate_dedup_events.py` 取不到），仅在
+  663ad38 的运行时错误串里被引用过。
+
 ### 5.2 `payload.common.roomId` 不可用于房间归属
 
 payload 里的 `roomId` 是直播间内部 ID，**每次会话都变**（F6）。
@@ -163,6 +183,11 @@ git log --oneline --follow -- src/migrate_split_events.py
 060abae feat: 登录 Cookie 采集礼物 + --sinks 覆盖存储方式
 8e0198c 增加本地数据库
 ```
+
+去重 / 补列的一次性脚本 `migrate_dedup_events.py`（见 §5.1）**未入库**，
+本仓库没有可取回对象：`git show 59fb32f:src/migrate_dedup_events.py` 会报
+路径不存在，其名字只出现在 663ad38 的运行时错误串里。相关 schema 演进已
+并入 `store.py` 的 DDL 段与 `__init__` 启动自愈。
 
 本 ADR 之后的 schema 演进请在 `src/store.py` 的 DDL 段直接进行，
 并同步更新本 ADR 的 §5.1 约束。

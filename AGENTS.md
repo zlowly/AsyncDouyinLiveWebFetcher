@@ -42,8 +42,31 @@ main.py (CLI/信号/任务编排)
 
 - `DoyinLiveRoom` is spelled "Doyin" (not "Douyin") in code — search accordingly.
 - Support modules: `config.py` (读取 `config.json`，白名单 + 日志存放形式), `whitelist.py` (白名单匹配), `ntfy.py` (SSE 监听，含 `NTFY_URL`), `ui.py` (Rich 控制台输出，`print` 全部走这里), `logging_config.py` (app/room/stat 日志), `constants.py`, `utils.py` (签名 + `wait_first`).
-- `SqliteEventStore`（`store.py`）已拆表：10 张 `ev_*` 分表（按 method 路由）+ `chat_fts`（trigram 全文）+ `ip_cache`，单表 `events` 已废弃。**分表迁移已完成**，迁移脚本已删除，决策与安全模型见 `docs/adr/0001-sqlite-split-migration.md`；`payload_of(table, event_id)` 取原始 payload。
-- Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的 `print`，cv2 惰性导入), `ip_cache.py` (ip_cache 表 CLI：import-csv/pending/user/status), `scripts/compact_logs.py` (日志瘦身/归档), `import_logs.py` (离线补录), `doctor.py`(计划新增：库自检).
+- `SqliteEventStore`（`store.py`）已拆表：10 张 `ev_*` 分表（按 method
+  路由）+ `chat_fts`（trigram 全文）+ `ip_cache`，单表 `events` 已废弃。
+  **分表迁移已完成**，迁移脚本已删除，决策与安全模型见
+  `docs/adr/0001-sqlite-split-migration.md`；`payload_of(table, event_id)`
+  取原始 payload。
+  - 幂等口径 = `ux_<table>_msg(msg_id)` **单列**唯一索引：`msgId` 全局
+    唯一，**`session` 不再参与去重**——重连后抖音原样重推、`msgId` 不变
+    而 `session` 变，旧 `(session,msg_id)` 复合键实测漏掉 8,177 组。
+  - 礼物另加 `ux_gift_trace ON ev_gift(trace_id) WHERE trace_id IS NOT NULL`：
+    `traceId` 是雪花 ID、一个送礼 tick 一个，连击链每 tick 一个新 traceId
+    （共享 `groupId`），**traceId 相同=重推、traceId 不同且 groupId
+    相同=连击**；`repeatEnd` 不可用于判重。
+  - **旧库自愈**：无需手动迁移。`SqliteEventStore.__init__` 启动时幂等
+    自愈——`ALTER TABLE ev_gift` 补 `trace_id` 列、`DROP INDEX IF EXISTS`
+    清掉旧的 `ux_*_session_msg` 复合索引，再 `executescript(SCHEMA)`。
+- Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的
+  `print`，cv2 惰性导入), `ip_cache.py` (ip_cache 表 CLI：
+  import-csv/pending/user/status), `scripts/compact_logs.py` (日志瘦身/归档),
+  `import_logs.py` (离线补录), `doctor.py`(计划新增：库自检).
+- Standalone tools in `tools/`（自 `~/scripts/` 迁入，路径自定位）:
+  `extract_and_visualize_log_data_sqlite.py` / `process_log_sqlite.py`
+  (ev_* 分表提取、估算画图与消息导出), `session_db.py` (场次选择公共模块),
+  `sixel_plot.py` (纯标准库 Sixel 渲染), `fetch_ip_location.py` (IP 属地
+  抓取，需 scrapling 环境), `track.zsh` / `user_info.zsh` (属地抓取管线 /
+  单用户速查). 详见 `tools/README.md`.
 
 ## Key quirks
 

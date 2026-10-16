@@ -1,6 +1,7 @@
 import asyncio
 import gzip
 import logging
+from collections import OrderedDict
 from datetime import datetime
 
 import aiohttp
@@ -26,6 +27,10 @@ from protobuf.douyin import (
 
 logger = logging.getLogger(__name__)
 
+# 礼物重推判重的 LRU 容量。抖音把同一条礼物消息重推一遍的间隔约 2.5 秒，
+# 4096 条足够覆盖一个直播时段的高峰。
+_GIFT_TRACE_CACHE = 4096
+
 
 def _dump_debug(message, room_id=""):
     """仅在 DEBUG 级别开启时才做整条消息的 JSON 序列化。
@@ -49,6 +54,11 @@ class DouyinChatWebSocketClient:
         self._stop_event = stop_event
         self._closed_event = asyncio.Event()
         self._tasks = []
+        # traceId -> None，当定长 LRU 用（OrderedDict 的 move_to_end +
+        # popitem(last=False) 即 LRU）。客户端是 per-room 实例，所以这个
+        # 缓存天然按房间隔离，watch 模式多房间互不干扰。
+        self._seen_gift_traces = OrderedDict()
+        self._gift_replayed = 0
         self._handlers = {
             "WebcastChatMessage": self._parseChatMsg,
             "WebcastGiftMessage": self._parseGiftMsg,
@@ -129,6 +139,11 @@ class DouyinChatWebSocketClient:
             logger.error(f"[{self._room_id}] WebSocket close error: {e}")
         finally:
             self._closed_event.set()
+            if self._gift_replayed:
+                logger.debug(
+                    f"[{self._room_id}] Dropped {self._gift_replayed} "
+                    f"replayed gift message(s) by traceId"
+                )
 
     async def _send_heartbeat(self, interval: int = 5):
         try:
@@ -235,16 +250,39 @@ class DouyinChatWebSocketClient:
             f"[#8CE7FF]{user_name}：[/#8CE7FF]{content}"
         )
 
+    def _is_replayed_gift(self, trace_id: str) -> bool:
+        """traceId 命中即判为抖音重推的同一条礼物。
+
+        traceId 是雪花 ID，一个送礼 tick 一个，不会复用；实测同 traceId
+        的重复对除 msgId / createTime / repeatEnd 外字段全同（10,059 对
+        逐字段 diff 只有那 3 个字段有差异），所以命中即可判重。
+        空 traceId 无从判重，放行（库里那 3 条由部分唯一索引兜底）。
+        """
+        if not trace_id:
+            return False
+        seen = self._seen_gift_traces
+        if trace_id in seen:
+            self._gift_replayed += 1
+            return True
+        seen[trace_id] = None
+        if len(seen) > _GIFT_TRACE_CACHE:
+            seen.popitem(last=False)
+        return False
+
     def _parseGiftMsg(self, payload):
         """礼物消息"""
         time_str = datetime.now().strftime("%H:%M:%S")
         message = GiftMessage().parse(payload)
+        # payload 照旧原样 dump —— 日志是原始事实流，重推也留着，
+        # 库层由 ev_gift 的 msg_id / trace_id 双唯一键去重。
+        _dump_debug(message, self._room_id)
+        if self._is_replayed_gift(message.trace_id):
+            return
         user_name = message.user.nick_name
         pay_lvl = message.user.pay_grade.level
         fans_lvl = message.user.fans_club.data.level
         gift_name = message.gift.name
         gift_cnt = message.combo_count
-        _dump_debug(message, self._room_id)
         self._stat_logger.info(
             {
                 "method": "WebcastGiftMessage",
