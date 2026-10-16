@@ -1127,8 +1127,9 @@ def print_sixel_comparison_chart(data_a, data_b, value_key, chart_title,
                                    block_style=block_style)
 
 
-def build_parser():
+def build_parser(prog=None):
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="从 events.db 提取、估算并可视化 totalUserCount 和 audienceCount。",
         formatter_class=argparse.RawTextHelpFormatter
     )
@@ -1280,13 +1281,13 @@ def build_parser():
 
 
 # --- 主执行块 ---
-def main(argv=None):
+def main(argv=None, prog=None):
     # 这两个是模块级开关，paint() / resolve_color() / extract_session_data() /
     # interpolate_data() 等 helper 会读。搬到 main() 里后赋值会退化成局部名，
     # helper 仍读到初值，导致 -d 与着色静默失效。CHART_FORMAT 只在 main 内用，
     # 不需要 global。
     global DEBUG_MODE, COLOR_ENABLED
-    parser = build_parser()
+    parser = build_parser(prog)
     args = parser.parse_args(argv)
 
     conn = session_db.open_db(args.db)

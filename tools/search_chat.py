@@ -219,8 +219,9 @@ def emit(rows, output_format, stream=sys.stdout):
         writer.writerow([_flatten(value) for value in row])
 
 
-def build_parser():
+def build_parser(prog=None):
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="在 events.db 的 ev_chat 里跨全部场次检索弹幕正文"
                     "（>= 3 字走 FTS 索引，1~2 字自动降级 LIKE），"
                     "支持场次/时间/房间过滤，输出命中明细 tsv 或 json。"
@@ -308,8 +309,8 @@ def build_parser():
     return parser
 
 
-def main(argv=None):
-    args = build_parser().parse_args(argv)
+def main(argv=None, prog=None):
+    args = build_parser(prog).parse_args(argv)
 
     conn = session_db.open_db(args.db)
 

@@ -255,8 +255,9 @@ def process_sessions(conn, groups, output_format="tsv", start=None, end=None,
         sys.exit(1)
 
 
-def main(argv=None):
+def build_parser(prog=None):
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="从 events.db 的分表中提取聊天、礼物、关注/分享、"
                     "粉丝团消息，支持场次指定、时间段过滤、单用户过滤，"
                     "按房间分块并按时间顺序输出。"
@@ -327,7 +328,11 @@ def main(argv=None):
         help=f"events.db 路径（缺省 {session_db.DEFAULT_DB_PATH}）。",
     )
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None, prog=None):
+    args = build_parser(prog).parse_args(argv)
 
     conn = session_db.open_db(args.db)
 

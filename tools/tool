@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""tools/ 统一入口。用法见 tool --help。"""
+import os
+import sys
+from pathlib import Path
+
+# 命令模块暂时还在 tools/ 根下（P4 才搬进 commands/），故把 tools/ 注入路径；
+# _lib 也一并注入，供 sessions 子命令和命令模块 import dbcli/session_db。
+TOOLS_DIR = Path(__file__).resolve().parent
+COMMANDS_DIR = TOOLS_DIR / "commands"
+sys.path.insert(0, str(TOOLS_DIR))
+sys.path.insert(0, str(TOOLS_DIR / "_lib"))
+
+# argparse 缺省 prog = basename(sys.argv[0])；这里显式取一次以便拼 "tool <子命令>"。
+PROG = os.path.basename(sys.argv[0]) or "tool"
+
+# (子命令名, 一句话说明)。顺序即 --help 里的展示顺序。
+_SUBCOMMANDS = (
+    ("chart", "提取/估算/可视化 ev_rank 的 totalUserCount、audienceCount"),
+    ("messages", "从 ev_chat/ev_gift/ev_social/ev_notice 提取消息（tsv/json）"),
+    ("search", "跨全部场次检索 ev_chat 弹幕正文"),
+    ("sessions", "列出 events.db 的全部场次清单"),
+    ("fetch", "串行抓取抖音用户页 IP 属地（需 scrapling 环境）"),
+)
+
+
+def _print_help(stream=sys.stdout):
+    print(f"用法: {PROG} <子命令> [参数...]", file=stream)
+    print("", file=stream)
+    print("可用子命令:", file=stream)
+    for name, desc in _SUBCOMMANDS:
+        print(f"  {name:<10} {desc}", file=stream)
+    print("", file=stream)
+    print(f"用 '{PROG} <子命令> --help' 查看某个子命令的完整参数。", file=stream)
+
+
+def _run_fetch(rest):
+    """fetch 的薄壳。
+
+    fetch_ip_location.py 的 main() 不接受 argv、直接读 sys.argv，且模块顶层
+    就是 `from scrapling.fetchers import Fetcher`（未受保护）——所以这里既
+    要先 import 才能进门，又必须容忍缺依赖时给出可读提示而不是 traceback。
+    """
+    try:
+        import fetch_ip_location
+    except ImportError as exc:
+        print(
+            f"错误: 子命令 fetch 依赖 scrapling，当前环境不可用（{exc}）。",
+            file=sys.stderr,
+        )
+        print(
+            "      这是环境依赖问题，不是参数写法错误：请切换到已安装 "
+            "scrapling 的 Python 环境后再运行（见 tools/README.md）。",
+            file=sys.stderr,
+        )
+        return 3
+    # 该 main() 读 sys.argv，临时改写后调用，用完还原。
+    saved = sys.argv
+    sys.argv = [f"{PROG} fetch", *rest]
+    try:
+        return fetch_ip_location.main()
+    finally:
+        sys.argv = saved
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if not argv or argv[0] in ("-h", "--help"):
+        _print_help()
+        return 0
+
+    cmd, rest = argv[0], argv[1:]
+    prog = f"{PROG} {cmd}"
+
+    # 惰性导入：每个分支内部才 import 对应模块。fetch_ip_location 顶层 import
+    # scrapling，若在文件顶层 import，没装 scrapling 的环境连 --help 都打不开。
+    if cmd == "chart":
+        import extract_and_visualize_log_data_sqlite as mod
+        return mod.main(rest, prog=prog)
+    if cmd == "messages":
+        import process_log_sqlite as mod
+        return mod.main(rest, prog=prog)
+    if cmd == "search":
+        import search_chat as mod
+        return mod.main(rest, prog=prog)
+    if cmd == "sessions":
+        # 按绝对路径加载，不走 `from commands import ...`：commands/ 没有
+        # __init__.py，是 namespace package，而 namespace portion 的优先级
+        # 低于同名正规包——sys.path 上只要存在另一个叫 commands 的正规包，
+        # 就会把这里抢走。commands 是个极易碰撞的通用名，故不依赖包解析。
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "tools_sessions", COMMANDS_DIR / "sessions.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.main(rest, prog=prog)
+    if cmd == "fetch":
+        return _run_fetch(rest)
+
+    print(f"错误: 未知子命令 '{cmd}'。", file=sys.stderr)
+    _print_help(stream=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
