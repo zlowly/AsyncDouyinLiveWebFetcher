@@ -19,19 +19,31 @@ python tools/_dev/golden.py capture   # 重新捕获基线（仅在有意改变�
 
 ## golden_base/
 
-重构**之前**捕获的 36 份快照。**只有在有意改变某个命令的输出时才重新
-capture**，否则 diff 红了就是行为回归，必须修代码而不是刷新基线。
+重构**之前**捕获的快照（当前 40 条 fixture + 1 条导入冒烟）。
+**只有在有意改变某个命令的输出时才重新 capture**，否则 diff 红了就是
+行为回归，必须修代码而不是刷新基线。
 
 基线里保留了几条「明知故犯」的真实行为，它们是重构时的红线：
 
 | fixture | 现象 | 含义 |
 |---|---|---|
-| `chart_bad_chart_h` | exit 0 | `--chart-height` 的 6 倍数校验**只在 `--chart-format sixel` 分支内**，ascii 模式下不生效 |
-| `chart_list_sessions` | exit 0 | chart 的 3 个「成功但无输出」早退点之一，必须保持 exit 0 |
+| `chart_bad_chart_h` | exit 0 | `--chart-height` 的 6 倍数校验**只在 `--chart-format sixel` 分支内**，ascii 模式下不生效；`chart_sixel_bad_h` 才是走该分支的用例 |
+| `chart_list_sessions` | exit 0 | chart 唯一**可达**的「成功但无输出」早退点，必须保持 exit 0。另两个 exit 0 早退点（场次无原始数据 / 无有效估算数据）在当前数据下不可达，golden 锁不住，属防御性分支 |
+| `chart_debug` | — | 锁 `-d`。P2 曾因模块级 `DEBUG_MODE` 在 `main()` 里被局部遮蔽导致 helper 层 16 行调试输出消失，而当时 35 条 fixture 无一触发 |
+| `chart_color_always` | — | 锁 `--color always`。同上，`COLOR_ENABLED` 被遮蔽会让 A/B 比对完全不着色。着色**只在比对模式**下可能开启 |
 | `search_session` | exit 1 | 零命中 |
 | `search_nohit` | exit 1 | 零命中返回 **1** 而非 0 |
 | `search_list_sessions` | exit 2 | **已知 bug**：`-k` 是 `required=True`，argparse 先校验必填就退出，`--list-sessions` 在 search 里永远走不到 |
 | `msg_default` vs `search_k3` | tsv 列数不同 | `messages` 是 3 列（`timestamp/speaker/content`，仅在有消息时写表头）；`search` 是 4 列（含 `room_id`，始终写表头） |
+
+## P3 起注意：argparse 的 prog
+
+三个命令都没显式传 `prog`，argparse 取 `basename(sys.argv[0])`。经统一入口
+`tool <子命令>` 转发时 usage 会变成调度器名（连子命令名都进不去），
+且续行缩进随 `prog` 长度变化 → 字节级 diff。受影响的 fixture 是
+`search_help` / `search_list_sessions` / `search_nokw`。
+
+P3 会**显式传 prog** 并有意重新 capture 这几条，属预期变更，不是回归。
 
 ## `_import_smoke`
 

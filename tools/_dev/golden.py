@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""golden 基线快照器 —— tools/ 统一 CLI 重构的验收工具。
+"""golden 基线快照器 —— tools/ 统一 CLI 重构的**常驻**验收安全网。
 
 用法:
-    python /tmp/opencode/golden.py capture <outdir>   # 跑全部 fixture 存快照
-    python /tmp/opencode/golden.py diff <outdir>      # 再跑一次并与快照比对
+    python tools/_dev/golden.py capture   # 跑全部 fixture 存基线（默认写 tools/_dev/golden_base）
+    python tools/_dev/golden.py diff      # 重跑并与基线比对（验收用）
 
 比对口径:每个 fixture 的 stdout + stderr + exit code 必须逐字节相同。
 输出里含时间戳/耗时的字段已在前置处理中去抖。
 
-不属于仓库,是一次性验收脚手架。
+**本文件已入库,不是一次性脚本。** 仓库没有测试框架、没有 CI,
+它就是 tools/ 重构的唯一安全网,不要删。
+只有**有意**改变某个命令的输出时才 capture;否则 diff 红了就是行为回归,
+应修代码而不是刷新基线。
+
+注意 P3 起 argparse 的 prog 会显式化,届时 search 的 usage/help 文案会
+有意变化 —— 那时才 capture,并在 commit message 里写明。
 """
 import os
 import subprocess
@@ -43,6 +49,10 @@ FIXTURES = [
                               "2026-10-14_21-57-54"]),
     ("chart_color_always",   ["extract_and_visualize_log_data_sqlite.py", "2026-10-14_21-57-54",
                               "-c", "2026-10-14_08-04-40", "--color", "always", "--chart-format", "ascii"]),
+    # 唯一可达的 sixel 分支：--chart-height 非 BAND_HEIGHT 倍数的校验
+    # （只在该分支内生效，ascii 模式不触发）。sixel_plot 本身可用时走真渲染。
+    ("chart_sixel_bad_h",    ["extract_and_visualize_log_data_sqlite.py",
+                              "--chart-format", "sixel", "--chart-height", "100"]),
 
     # ---- messages (process_log_sqlite.py) ----
     ("msg_default",          ["process_log_sqlite.py"]),

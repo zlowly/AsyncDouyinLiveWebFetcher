@@ -1,0 +1,6 @@
+$ extract_and_visualize_log_data_sqlite.py --chart-format sixel --chart-height 100
+--- exit: 1
+--- stdout:
+
+--- stderr:
+错误: --chart-height 必须是 6 的正整数倍，当前为 100。
