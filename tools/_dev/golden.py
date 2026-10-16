@@ -36,6 +36,13 @@ FIXTURES = [
     ("chart_bad_session",    ["extract_and_visualize_log_data_sqlite.py", "1999-01-01:1", "--chart-format", "ascii"]),
     ("chart_bad_chart_h",    ["extract_and_visualize_log_data_sqlite.py", "--chart-format", "ascii", "--chart-height", "100"]),
     ("chart_decay_bad",      ["extract_and_visualize_log_data_sqlite.py", "-a", "5.0", "--chart-format", "ascii"]),
+    # P2 曾把 --debug 与 --color always 弄失效（模块级开关在 main() 里被局部遮蔽，
+    # helper 仍读初值），而这两条 fixture 缺失导致 golden 全绿放行。补上以锁死。
+    ("chart_debug",          ["extract_and_visualize_log_data_sqlite.py", "-d", "--chart-format", "ascii"]),
+    ("chart_debug_session",  ["extract_and_visualize_log_data_sqlite.py", "-d", "--chart-format", "ascii",
+                              "2026-10-14_21-57-54"]),
+    ("chart_color_always",   ["extract_and_visualize_log_data_sqlite.py", "2026-10-14_21-57-54",
+                              "-c", "2026-10-14_08-04-40", "--color", "always", "--chart-format", "ascii"]),
 
     # ---- messages (process_log_sqlite.py) ----
     ("msg_default",          ["process_log_sqlite.py"]),

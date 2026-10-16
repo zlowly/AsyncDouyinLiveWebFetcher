@@ -1281,6 +1281,11 @@ def build_parser():
 
 # --- 主执行块 ---
 def main(argv=None):
+    # 这两个是模块级开关，paint() / resolve_color() / extract_session_data() /
+    # interpolate_data() 等 helper 会读。搬到 main() 里后赋值会退化成局部名，
+    # helper 仍读到初值，导致 -d 与着色静默失效。CHART_FORMAT 只在 main 内用，
+    # 不需要 global。
+    global DEBUG_MODE, COLOR_ENABLED
     parser = build_parser()
     args = parser.parse_args(argv)
 
