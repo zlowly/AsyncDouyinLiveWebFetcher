@@ -1,0 +1,6 @@
+$ extract_and_visualize_log_data_sqlite.py 1999-01-01:1 --chart-format ascii
+--- exit: 1
+--- stdout:
+
+--- stderr:
+错误: 1999-01-01 没有可用场次。

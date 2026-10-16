@@ -1,0 +1,6 @@
+$ search_chat.py -k x --db /tmp/opencode/nonexistent.db
+--- exit: 1
+--- stdout:
+
+--- stderr:
+错误: 事件库 '/tmp/opencode/nonexistent.db' 不存在。

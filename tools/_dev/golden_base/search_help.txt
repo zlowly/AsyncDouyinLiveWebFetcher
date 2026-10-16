@@ -1,0 +1,27 @@
+$ search_chat.py --help
+--- exit: 0
+--- stdout:
+usage: search_chat.py [-h] -k TERM [--like] [-S SPEC] [--list-sessions] [-r ROOMS] [--start TIME]
+                      [--end TIME] [-o {tsv,json}] [--order {asc,desc}] [--limit N] [--db PATH]
+
+在 events.db 的 ev_chat 里跨全部场次检索弹幕正文（>= 3 字走 FTS 索引，1~2 字自动降级 LIKE），支持场次/时间/房间过滤，输出命中明细 tsv 或 json。
+
+options:
+  -h, --help            show this help message and exit
+  -k, --keyword TERM    要检索的词（子串匹配）。>= 3 字走 FTS 索引，1~2 字自动改走 LIKE（trigram 索引检索不到这么短的词）。含 % _ \
+                        时按字面量处理，含 " 也不会破坏查询。
+  --like                强制走 LIKE 全表扫而不是 FTS 索引。用于调试 3 字门槛，或需要与 FTS 不完全一致的大小写/模糊行为时。
+  -S, --session SPEC    场次：'2026-10-11:1'（当天第1场）、'2026-10-11:-1'（最后一场）、'2026-10-11'（仅1场时直选）、或精确
+                        session id。缺省不限场次，检索全库；用 --list-sessions 查看清单。
+  --list-sessions       列出全部场次（含天内序号）后退出。
+  -r, --room ROOMS      房间号，逗号分隔，如 -r 74083423272,249069870647。缺省不限房间（检索全库）。也用于过滤场次池和 -S 的天内编号。
+  --start TIME          起始时间，如 '2025-08-20 20:00'、'20:00'；仅给时分时按一天中的时刻过滤（任意日期生效，支持跨午夜）。
+  --end TIME            结束时间；仅给日期 (如 '2025-08-20') 表示当天 23:59:59。
+  -o, --output-format {tsv,json}
+                        输出格式，可选 'tsv' 或 'json' (默认为 'tsv')。
+  --order {asc,desc}    按时间排序方向，'desc' 最新在前（默认），'asc' 最早在前。
+  --limit N             最多显示多少条命中，0 表示不限（默认为 200）。总命中数始终打到 stderr。
+  --db PATH             events.db 路径（缺省
+                        /home/zsy/mysource/AsyncDouyinLiveWebFetcher/data/events.db）。
+--- stderr:
+

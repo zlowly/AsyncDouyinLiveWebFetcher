@@ -1,0 +1,317 @@
+$ process_log_sqlite.py -S 2026-10-11:1 -o json
+--- exit: 0
+--- stdout:
+[
+  {
+    "room": "249069870647",
+    "messages": [
+      {
+        "timestamp": "2026-10-11 13:01:39,768",
+        "speaker": "虹狼½◈",
+        "content": "这么乖?"
+      },
+      {
+        "timestamp": "2026-10-11 13:01:52,881",
+        "speaker": "诶嘿～",
+        "content": "可以开个小温3项给铁人比了"
+      },
+      {
+        "timestamp": "2026-10-11 13:03:19,468",
+        "speaker": "知霜月",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:03:44,016",
+        "speaker": "🕊沈慈🌟",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:03:47,391",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:03:54,600",
+        "speaker": "光阴随行 ◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:10:32,946",
+        "speaker": "诶嘿～",
+        "content": "[打call][打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:10:49,028",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:13:24,145",
+        "speaker": "诶嘿～",
+        "content": "还中不？"
+      },
+      {
+        "timestamp": "2026-10-11 13:13:29,365",
+        "speaker": "诶嘿～",
+        "content": "休息一下？"
+      },
+      {
+        "timestamp": "2026-10-11 13:13:41,260",
+        "speaker": "红豆泥",
+        "content": "怎么感觉蔫不拉几的？"
+      },
+      {
+        "timestamp": "2026-10-11 13:17:41,689",
+        "speaker": "诶嘿～",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:18:58,349",
+        "speaker": "虹狼½◈",
+        "content": "我想全球变冷"
+      },
+      {
+        "timestamp": "2026-10-11 13:19:21,368",
+        "speaker": "虹狼½◈",
+        "content": "没问题"
+      },
+      {
+        "timestamp": "2026-10-11 13:20:19,464",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:21:38,037",
+        "speaker": "原序卫队",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:21:50,541",
+        "speaker": "红豆泥",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:22:01,169",
+        "speaker": "红豆泥",
+        "content": "[发呆]"
+      },
+      {
+        "timestamp": "2026-10-11 13:22:28,770",
+        "speaker": "知霜月",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:25:08,737",
+        "speaker": "诶嘿～",
+        "content": "[打call][打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:25:17,408",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:27:01,015",
+        "speaker": "虹狼½◈",
+        "content": "原来如此"
+      },
+      {
+        "timestamp": "2026-10-11 13:27:53,247",
+        "speaker": "虹狼½◈",
+        "content": "还以为偷练过，原来是被隐藏"
+      },
+      {
+        "timestamp": "2026-10-11 13:28:05,688",
+        "speaker": "SL.温缇Venti◈",
+        "content": "哈哈哈哈哈"
+      },
+      {
+        "timestamp": "2026-10-11 13:28:08,336",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:30:47,382",
+        "speaker": "诶嘿～",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:31:07,260",
+        "speaker": "原序卫队",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:31:19,155",
+        "speaker": "无奈的梦⁷ˢ",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:34:54,505",
+        "speaker": "Lahee",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:35:55,860",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:38:51,595",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:41:10,405",
+        "speaker": "知霜月",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:44:11,057",
+        "speaker": "虹狼½◈",
+        "content": "真的"
+      },
+      {
+        "timestamp": "2026-10-11 13:44:23,566",
+        "speaker": "虹狼½◈",
+        "content": "我只是看口型"
+      },
+      {
+        "timestamp": "2026-10-11 13:52:32,765",
+        "speaker": "诶嘿～",
+        "content": "[打call][打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:52:42,010",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:55:11,094",
+        "speaker": "虹狼½◈",
+        "content": "眉间雪 or 红绳"
+      },
+      {
+        "timestamp": "2026-10-11 13:56:36,144",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:56:50,788",
+        "speaker": "晚茶🔅✡ᴺᵉᵇᵘˡ💨♰▲▽🦥🌸",
+        "content": "缇！"
+      },
+      {
+        "timestamp": "2026-10-11 13:56:54,628",
+        "speaker": "晚茶🔅✡ᴺᵉᵇᵘˡ💨♰▲▽🦥🌸",
+        "content": "[打call][打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 13:58:43,642",
+        "speaker": "知霜月",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 14:03:13,820",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 14:04:10,687",
+        "speaker": "虹狼½◈",
+        "content": "播一小时吗"
+      },
+      {
+        "timestamp": "2026-10-11 14:04:38,295",
+        "speaker": "虹狼½◈",
+        "content": "晚上休息不播?"
+      },
+      {
+        "timestamp": "2026-10-11 14:05:30,495",
+        "speaker": "虹狼½◈",
+        "content": "抛抉择币决定吧"
+      },
+      {
+        "timestamp": "2026-10-11 14:05:59,579",
+        "speaker": "Hsperia",
+        "content": "下午好"
+      },
+      {
+        "timestamp": "2026-10-11 14:06:39,144",
+        "speaker": "虹狼½◈",
+        "content": "[打call][打call][打call]"
+      },
+      {
+        "timestamp": "2026-10-11 14:08:55,167",
+        "speaker": "诶嘿～",
+        "content": "下班！！！"
+      },
+      {
+        "timestamp": "2026-10-11 14:08:59,771",
+        "speaker": "诶嘿～",
+        "content": "拜拜咯"
+      },
+      {
+        "timestamp": "2026-10-11 14:09:24,873",
+        "speaker": "诶嘿～",
+        "content": "拜拜👋🏻👋🏻👋🏻👋🏻"
+      },
+      {
+        "timestamp": "2026-10-11 14:10:17,541",
+        "speaker": "诶嘿～",
+        "content": "拜拜"
+      },
+      {
+        "timestamp": "2026-10-11 14:10:30,072",
+        "speaker": "诶嘿～",
+        "content": "歇着去吧"
+      },
+      {
+        "timestamp": "2026-10-11 14:11:12,130",
+        "speaker": "虹狼½◈",
+        "content": "今天没上回辛苦吧"
+      },
+      {
+        "timestamp": "2026-10-11 14:11:39,835",
+        "speaker": "虹狼½◈",
+        "content": "拜拜"
+      },
+      {
+        "timestamp": "2026-10-11 14:11:47,056",
+        "speaker": "诶嘿～",
+        "content": "晚上不播"
+      },
+      {
+        "timestamp": "2026-10-11 14:11:49,657",
+        "speaker": "Hsperia",
+        "content": "拜拜~"
+      },
+      {
+        "timestamp": "2026-10-11 14:11:58,327",
+        "speaker": "诶嘿～",
+        "content": "小温忘记了"
+      },
+      {
+        "timestamp": "2026-10-11 14:12:03,541",
+        "speaker": "诶嘿～",
+        "content": "昨天说的"
+      },
+      {
+        "timestamp": "2026-10-11 14:12:07,564",
+        "speaker": "诶嘿～",
+        "content": "你想休息"
+      },
+      {
+        "timestamp": "2026-10-11 14:12:19,988",
+        "speaker": "虹狼½◈",
+        "content": "晚上见"
+      },
+      {
+        "timestamp": "2026-10-11 14:12:30,059",
+        "speaker": "诶嘿～",
+        "content": "无视小温要直播的话"
+      }
+    ]
+  }
+]
+--- stderr:
+房间 249069870647 场次 2026-10-11_11-46-56（2026-10-11 13:01:37 ~ 2026-10-11 14:12:30）

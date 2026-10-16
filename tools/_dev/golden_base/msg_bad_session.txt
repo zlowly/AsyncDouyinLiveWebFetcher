@@ -1,0 +1,6 @@
+$ process_log_sqlite.py -S 1999-01-01:1 -o tsv
+--- exit: 1
+--- stdout:
+
+--- stderr:
+错误: 1999-01-01 没有可用场次。

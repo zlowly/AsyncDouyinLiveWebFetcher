@@ -24,3 +24,6 @@ graphify-out/
 
 # deepwork 工作流状态（不入库）
 .slim/
+
+# 重构验收脚手架的临时产物
+tools/_dev/__pycache__/

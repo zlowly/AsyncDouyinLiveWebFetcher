@@ -1,0 +1,6 @@
+$ import smoke: tools/_lib/{dbcli,session_db,sixel_plot}
+--- exit: 0
+--- stdout:
+libs ok /home/zsy/mysource/AsyncDouyinLiveWebFetcher/data/events.db
+--- stderr:
+

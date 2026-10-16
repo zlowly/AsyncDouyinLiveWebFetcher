@@ -1,0 +1,6 @@
+$ extract_and_visualize_log_data_sqlite.py -a 5.0 --chart-format ascii
+--- exit: 1
+--- stdout:
+
+--- stderr:
+错误: --audience-decay-factor 必须在 0 到 1 之间。

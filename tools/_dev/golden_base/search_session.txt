@@ -1,0 +1,6 @@
+$ search_chat.py -k 礼物 -S 2026-10-11:1
+--- exit: 1
+--- stdout:
+
+--- stderr:
+共 0 条命中：礼物

@@ -1,0 +1,6 @@
+$ search_chat.py -k zzzzzz不存在的词
+--- exit: 1
+--- stdout:
+
+--- stderr:
+共 0 条命中：zzzzzz不存在的词
