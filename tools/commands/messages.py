@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 import dbcli  # noqa: E402
 import session_db  # noqa: E402
-# 参数解析与时间过滤统一在 dbcli，search_chat.py 也 import 同一份。
+# 参数解析与时间过滤统一在 dbcli，search.py 也 import 同一份。
 from dbcli import (  # noqa: E402
     DATETIME_FORMATS,
     build_time_filter,

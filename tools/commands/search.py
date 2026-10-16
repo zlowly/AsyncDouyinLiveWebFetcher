@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """跨全部场次检索 events.db 的弹幕正文（ev_chat）。
 
-与 process_log_sqlite.py 的分工：那个是"把某一场的消息倒出来"，
+与 messages 子命令的分工：那个是"把某一场的消息倒出来"，
 这个是"在全库 15 万条弹幕里找某个词"，缺省不加任何场次/房间限制。
 
 两条检索路径，按词长自动切换（-k 少于 3 字走 LIKE，--like 可强制）：
@@ -24,11 +24,11 @@ MATCH 参数整体包成短语、`"` 翻倍；LIKE 参数转义 \\ % _ 并配 ES
 % 和 _ 当通配符。
 
 用法示例：
-  python tools/search_chat.py -k 哈哈哈                  # 全库全房间
-  python tools/search_chat.py -k 主播 --limit 0          # 2 字词走 LIKE
-  python tools/search_chat.py -k 6666 -S 2026-10-15      # 限某一场
-  python tools/search_chat.py -k 笑 --start 20:00 --end 22:00
-  python tools/search_chat.py -k 礼物 -o json
+  python tools/tool search -k 哈哈哈                  # 全库全房间
+  python tools/tool search -k 主播 --limit 0          # 2 字词走 LIKE
+  python tools/tool search -k 6666 -S 2026-10-15      # 限某一场
+  python tools/tool search -k 笑 --start 20:00 --end 22:00
+  python tools/tool search -k 礼物 -o json
 """
 import argparse
 import csv

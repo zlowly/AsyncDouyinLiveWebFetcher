@@ -26,7 +26,7 @@ def build_parser(prog=None):
         dest="rooms",
         type=dbcli.parse_room_arg,
         # 与 messages 的默认**不同**：这里缺省 None（列出全部房间的场次），
-        # 不要与 process_log_sqlite.py 的非空 DEFAULT_ROOMS 统一。
+        # 不要与 messages 的非空 DEFAULT_ROOMS 统一。
         default=None,
         metavar="ROOMS",
         help="房间号，逗号分隔，如 -r 74083423272,249069870647。"
