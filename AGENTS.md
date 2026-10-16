@@ -57,16 +57,27 @@ main.py (CLI/信号/任务编排)
   - **旧库自愈**：无需手动迁移。`SqliteEventStore.__init__` 启动时幂等
     自愈——`ALTER TABLE ev_gift` 补 `trace_id` 列、`DROP INDEX IF EXISTS`
     清掉旧的 `ux_*_session_msg` 复合索引，再 `executescript(SCHEMA)`。
+  - **查 `chat_fts` 的两个静默陷阱**：① trigram 检索不到 **1~2 字符**的
+    词，`MATCH '主播'` 返回 0 而**不报错**，短词必须降级
+    `content LIKE ? ESCAPE '\'`（转义 `\ % _`，否则被当通配符）；② `MATCH`
+    **不带列过滤 = content + user_name 都搜**（`MATCH '"哈哈哈"'`=1655，而
+    `MATCH 'content:"哈哈哈"'`=正文 845、昵称 831），只看正文必须写
+    `content:` 前缀。`tokenize='trigram'` 默认 `case_sensitive=0`，ASCII
+    大小写与 LIKE 一致。检索入口用 `python tools/search_chat.py -k <词>`
+    （≥3 字走索引 ~10ms，1~2 字走全表扫 ~80ms）。
 - Standalone tools in `src/`: `ass.py` (ASS subtitles；独立 CLI，保留自己的
   `print`，cv2 惰性导入), `ip_cache.py` (ip_cache 表 CLI：
   import-csv/pending/user/status), `scripts/compact_logs.py` (日志瘦身/归档),
   `import_logs.py` (离线补录), `doctor.py`(计划新增：库自检).
 - Standalone tools in `tools/`（自 `~/scripts/` 迁入，路径自定位）:
   `extract_and_visualize_log_data_sqlite.py` / `process_log_sqlite.py`
-  (ev_* 分表提取、估算画图与消息导出), `session_db.py` (场次选择公共模块),
-  `sixel_plot.py` (纯标准库 Sixel 渲染), `fetch_ip_location.py` (IP 属地
-  抓取，需 scrapling 环境), `track.zsh` / `user_info.zsh` (属地抓取管线 /
-  单用户速查). 详见 `tools/README.md`.
+  (ev_* 分表提取、估算画图与消息导出), `search_chat.py` (跨全部场次/房间
+  检索 ev_chat 弹幕正文，命中明细 tsv/json；≥3 字走 chat_fts 索引、1~2 字
+  降级 LIKE), `dbcli.py` (命令行参数与时间过滤公共模块，
+  `-S`/`--start`/`--end`/`-r` 语义统一由它定义), `session_db.py` (场次选择
+  公共模块), `sixel_plot.py` (纯标准库 Sixel 渲染), `fetch_ip_location.py`
+  (IP 属地抓取，需 scrapling 环境), `track.zsh` / `user_info.zsh` (属地抓取
+  管线 / 单用户速查). 详见 `tools/README.md`.
 
 ## Key quirks
 
