@@ -75,9 +75,12 @@ main.py (CLI/信号/任务编排)
   检索 ev_chat 弹幕正文，命中明细 tsv/json；≥3 字走 chat_fts 索引、1~2 字
   降级 LIKE), `_lib/dbcli.py` (命令行参数与时间过滤公共模块，
   `-S`/`--start`/`--end`/`-r` 语义统一由它定义), `_lib/session_db.py` (场次选择
-  公共模块), `_lib/sixel_plot.py` (纯标准库 Sixel 渲染), `fetch_ip_location.py`
-  (IP 属地抓取，需 scrapling 环境), `track.zsh` / `user_info.zsh` (属地抓取
-  管线 / 单用户速查). 详见 `tools/README.md`.
+  公共模块), `_lib/sixel_plot.py` (纯标准库 Sixel 渲染), `commands/user.py`
+  (单用户速查：最新资料/活跃度（直播日/场次，近 6 个月）/变化时间线/最近
+  发言/IP 属地，属地缺失时自动用
+  scrapling 解释器抓取（`SCRAPLING_PY` 可指定）), `fetch_ip_location.py`
+  (IP 属地抓取，需 `scrapling[fetchers]`，已列入 requirements.txt), `track.zsh`
+  (属地抓取管线). 详见 `tools/README.md`.
 
 ## Key quirks
 

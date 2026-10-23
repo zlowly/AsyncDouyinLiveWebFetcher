@@ -22,6 +22,7 @@ _SUBCOMMANDS = (
     ("messages", "从 ev_chat/ev_gift/ev_social/ev_notice 提取消息（tsv/json）"),
     ("search", "跨全部场次检索 ev_chat 弹幕正文"),
     ("sessions", "列出 events.db 的全部场次清单"),
+    ("user", "单用户速查：资料/变化时间线/最近发言/IP 属地"),
     ("fetch", "串行抓取抖音用户页 IP 属地（需 scrapling 环境）"),
 )
 
@@ -105,6 +106,9 @@ def main(argv=None):
         return mod.main(rest, prog=prog)
     if cmd == "sessions":
         mod = _load_command("tools_sessions", "sessions.py")
+        return mod.main(rest, prog=prog)
+    if cmd == "user":
+        mod = _load_command("tools_user", "user.py")
         return mod.main(rest, prog=prog)
     if cmd == "fetch":
         return _run_fetch(rest)

@@ -1,8 +1,8 @@
 # tools/
 
 从 `~/scripts/` 迁入的分析/工具脚本，全是独立工具，不参与 `src/` 抓取主流程。
-现已收口成**单一入口** `tool <子命令>`，共 5 个子命令
-（`chart` / `messages` / `search` / `sessions` / `fetch`）。
+现已收口成**单一入口** `tool <子命令>`，共 6 个子命令
+（`chart` / `messages` / `search` / `sessions` / `user` / `fetch`）。
 
 旧脚本 `extract_and_visualize_log_data_sqlite.py`、`process_log_sqlite.py`、
 `search_chat.py` **已不存在**——它们分别重命名为 `commands/chart.py`、
@@ -20,9 +20,10 @@ python tools/tool <子命令> --help     # 查看某个子命令的完整参数
 每个子命令模块内部也自行把 `tools/_lib` 注入 `sys.path`，`--db` 可覆盖
 events.db 路径。
 
-> 例外：`fetch` 的模块顶层就 `import scrapling`，所以**必须先切到装了
-> scrapling 的环境**才能看到它的 `--help`——本机没装时它走的是 ImportError
-> 分支（退出码 3），拿不到参数列表。
+> 例外：`fetch` 的模块顶层就 `import scrapling`，而 **scrapling 已列入
+> requirements.txt（`scrapling[fetchers]`）**，所以 `pip install -r
+> requirements.txt` 之后项目环境即可直接运行；未装时它走 ImportError 分支
+> （退出码 3），拿不到参数列表。
 
 ## 子命令
 
@@ -32,31 +33,37 @@ events.db 路径。
 | `messages` | 从 `ev_chat/ev_gift/ev_social/ev_notice` 提取聊天/礼物/关注分享/粉丝团消息，tsv（着色）/json 输出 | 项目环境 |
 | `search` | 跨**全部场次全部房间**检索 `ev_chat` 弹幕正文，命中明细 tsv/json（≥3 字走 `chat_fts` trigram 索引，1~2 字自动降级 LIKE） | 项目环境 |
 | `sessions` | 列出 events.db 的全部场次清单（含天内序号），可直接抄进 `-S/--session` | 项目环境 |
-| `fetch` | 串行抓取抖音用户页的 IP 属地/昵称/抖音号/粉丝数/作品数/年龄，写 CSV | **必须 scrapling 环境**（`import scrapling`） |
+| `user` | 单用户速查：按昵称/抖音号/用户ID 匹配候选，展示最新资料、活跃度（直播日/场次，按 session 去重，含近 6 个月逐月）、变化时间线、最近发言与 IP 属地；属地未抓取时自动定位一个 scrapling 解释器（`SCRAPLING_PY` 可覆盖），跑 `fetch_ip_location.py` 并把 CSV 直接 upsert 进 `ip_cache`（`--no-fetch` 关闭） | 项目环境（自动抓取需一个装了 scrapling 的解释器） |
+| `fetch` | 串行抓取抖音用户页的 IP 属地/昵称/抖音号/粉丝数/作品数/年龄，写 CSV | 项目环境（需 `scrapling[fetchers]`，已列入 requirements.txt） |
 
-> `fetch` 在本机（未装 scrapling）会返回退出码 3 并打印环境提示，这是**预期
-> 行为**：它把「环境依赖缺失」和「参数写法错误」区分开，不是文档或命令错误。
-> 请切换到已安装 scrapling 的 Python 环境后再运行。
+> `fetch` 在**未装 scrapling** 的环境里会返回退出码 3 并打印环境提示，这是
+> **预期行为**：它把「环境依赖缺失」和「参数写法错误」区分开，不是文档或
+> 命令错误。按 `pip install -r requirements.txt` 装好依赖（含
+> `scrapling[fetchers]`）即可直接运行。
 
 ## 目录结构
 
 ```
 tools/
-  tool                     统一入口（调度 5 个子命令，惰性导入）
-  commands/                命令模块：chart.py / messages.py / search.py / sessions.py
+  tool                     统一入口（调度 6 个子命令，惰性导入）
+  commands/                命令模块：chart.py / messages.py / search.py / sessions.py / user.py
   _lib/                    共享库：dbcli.py / session_db.py / sixel_plot.py
   _dev/                    重构验收脚手架（golden.py 逐字节 diff），用法见 _dev/README.md
   fetch_ip_location.py     属地抓取（仍在 tools/ 根，模块顶层就 import scrapling）
-  track.zsh / user_info.zsh  属地抓取管线 / 单用户速查（shell 脚本）
+  track.zsh                属地抓取管线（enrich / user / status）
 ```
 
 - `commands/` 下的命令模块**不共享参数定义**，各自建 parser；`_lib/` 被它们
   import（`dbcli` 定义 `-S`/`--start`/`--end`/`-r` 的统一语义，`session_db`
   负责场次解析与 `DEFAULT_DB_PATH`，`sixel_plot` 是 chart 的 Sixel 渲染库，
   缺库时 chart 自动退回字符图），二者都不单独运行。
-- `fetch_ip_location.py` 与两个 `.zsh` 脚本**未搬进** `commands/`：
+- `fetch_ip_location.py` 与 `track.zsh` **未搬进** `commands/`：
   `fetch` 只是把 `fetch_ip_location.py` 薄壳转发（其 `main()` 直接读
-  `sys.argv`）。
+  `sys.argv`）；`user` 子命令在属地缺失时自动定位一个能
+  `from scrapling.fetchers import Fetcher` 的解释器（`SCRAPLING_PY` 优先，
+  其次当前解释器与常见 conda env），以子进程
+  跑 `tools/fetch_ip_location.py` 生成 CSV，再把 CSV 直接 upsert 进
+  `--db` 指向的库 —— 不经 zsh/track.zsh，也不依赖它的环境。
 
 ## 数据来源
 
@@ -96,10 +103,10 @@ python tools/tool search -k 礼物 -o json
 # 属地抓取管线（pending → 抓取 → 回灌）
 zsh tools/track.zsh enrich --limit 50 --rounds 2
 
-# 单用户速查（模式支持 * ? 通配符）
-zsh tools/user_info.zsh '主播*' -n 10
+# 单用户速查（模式支持 * ? 通配符；-y 多命中时自动选最近出现的）
+python tools/tool user '主播*' -n 10
 
-# 手动抓 IP 属地（scrapling 环境下）
+# 手动抓 IP 属地（项目环境下，需 requirements.txt 里的 scrapling[fetchers]）
 tools/fetch_ip_location.py --list pending.txt --csv out.csv --interval 1
 ```
 
@@ -108,6 +115,12 @@ tools/fetch_ip_location.py --list pending.txt --csv out.csv --interval 1
 - `fetch_ip_location.py` 的 `list.txt` / `ip_locations.csv` 是运行时生成的
   临时工作文件，不随仓库跟踪；`track.zsh` 管线总是显式传 `--list`/`--csv`，
   缺省值仅供手工运行。
+- `user` 子命令在 `ip_cache` 里查不到属地时会**自动抓一次**：在 Python 内
+  定位一个能 `from scrapling.fetchers import Fetcher` 的解释器（`SCRAPLING_PY`
+  优先）→ 跑 `tools/fetch_ip_location.py` → 把 CSV 直接 upsert 进 `--db`
+  指定的库；没有可用解释器时给出可读提示并继续输出其余报告（注意
+  scrapling 需带 fetchers 额外依赖，`pip install "scrapling[fetchers]"`）。
+  不想联网就加 `--no-fetch`，只显示「尚未抓取」。抓取失败不改变退出码（仍是 0）。
 - 本组脚本保留原有风格（单引号、中文注释），不参与 `src/` 的 ruff 检查与格式化。
 
 ## search 的两条检索路径

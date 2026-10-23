@@ -4,3 +4,6 @@ betterproto>=1.2.5
 mini-racer>=0.12.4
 yarl>=1.20.1
 rich>=14.1.0
+# 仅 tools/ 用：fetch_ip_location.py 抓 IP 属地（tool user 自动抓取也走它）。
+# Fetcher 需要 fetchers 额外依赖（curl_cffi 等），故必须带 [fetchers]。
+scrapling[fetchers]>=0.5

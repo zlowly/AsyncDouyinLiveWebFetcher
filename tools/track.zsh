@@ -34,12 +34,20 @@ usage() { sed -n '3,30p' "$SELF"; }
 
 # ---------- 配置 ----------
 PROJ=${0:A:h:h}
-DB=$PROJ/data/events.db
+DB=${DB:-$PROJ/data/events.db}   # 可被环境变量覆盖
 IPCLI=$PROJ/src/ip_cache.py
-PY=/home/zsy/miniconda3/envs/AsyncDouyinLiveWebFetcher/bin/python
+# 解释器不写死：本机 conda 路径会随环境迁移失效（曾导致 user:3: 找不到
+# .../bin/python）。PY 管 ip_cache.py，FETCH_PY 管 fetch_ip_location.py
+# （必须能 import scrapling，通常是另一个环境）。
+PY=${PY:-$(command -v python3 || command -v python)}
 FETCHER_DIR=${0:A:h}
 FETCHER="$FETCHER_DIR/fetch_ip_location.py"
-FETCH_PY=/home/zsy/miniconda3/envs/scrapling/bin/python3
+FETCH_PY=${FETCH_PY:-$(command -v python3 || command -v python)}
+
+[[ -n "$PY" ]] || {
+    echo "找不到 python3/python：请设置 PY=/path/to/python 后重试"
+    exit 1
+}
 
 # ---------- 参数 ----------
 SUB=enrich
@@ -76,6 +84,17 @@ done
 
 [[ -f "$DB" ]] || { echo "数据库不存在: $DB（先跑迁移）"; exit 1 }
 [[ -f "$IPCLI" ]] || { echo "找不到 $IPCLI"; exit 1 }
+
+# 抓取解释器必须装了 scrapling。缺失只告警不中止：enrich 的抓取步骤会
+# 自己带退出码/报错，status 根本用不到它。
+if [[ "$SUB" == enrich || "$SUB" == user ]]; then
+    if [[ -z "$FETCH_PY" ]] || ! "$FETCH_PY" -c 'import scrapling' \
+            >/dev/null 2>&1; then
+        echo "⚠ 抓取解释器无法 import scrapling：${FETCH_PY:-<空>}"
+        echo "  请设 FETCH_PY=/path/to/scrapling/env/bin/python 后重试"
+        echo "  （enrich 仍会继续，但抓取步骤会失败）。"
+    fi
+fi
 
 WORK=$(mktemp -d /tmp/track.XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
